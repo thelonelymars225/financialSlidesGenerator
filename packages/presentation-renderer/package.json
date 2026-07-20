@@ -1,0 +1,11 @@
+{
+  "name": "@financial-slides/presentation-renderer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.js",
+  "scripts": {
+    "check": "node --check src/index.js",
+    "test": "node --test"
+  }
+}

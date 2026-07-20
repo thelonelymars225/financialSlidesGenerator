@@ -1,0 +1,9 @@
+{
+  "name": "@financial-slides/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "check": "node scripts/validate-examples.mjs",
+    "test": "node --test"
+  }
+}

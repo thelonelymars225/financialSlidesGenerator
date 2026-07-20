@@ -1,0 +1,34 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+.next/
+*.tsbuildinfo
+apps/web/vite.config.js
+apps/web/vite.config.d.ts
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Generated and customer data
+artifacts/
+uploads/
+tmp/
+*.pptx
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/

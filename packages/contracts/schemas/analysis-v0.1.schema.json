@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://financialslidesgenerator.local/schemas/analysis-v0.1.schema.json",
+  "title": "Analysis v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "executiveSummary", "facts", "trends", "risks", "opportunities", "recommendedVisuals"],
+  "properties": {
+    "schemaVersion": { "const": "0.1" },
+    "executiveSummary": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "metric", "value", "unit", "period", "source", "confidence"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "metric": { "type": "string", "minLength": 1 },
+          "value": { "type": "number" },
+          "unit": { "type": "string", "minLength": 1 },
+          "period": { "type": "string", "minLength": 1 },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["page"],
+            "properties": { "page": { "type": "integer", "minimum": 1 } }
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "trends": { "type": "array" },
+    "risks": { "type": "array" },
+    "opportunities": { "type": "array" },
+    "recommendedVisuals": { "type": "array" }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "0.1",
+  "executiveSummary": ["Revenue increased 14% year over year."],
+  "facts": [
+    {
+      "id": "fact_42",
+      "metric": "Revenue",
+      "value": 12400000,
+      "unit": "USD",
+      "period": "Q2 2026",
+      "source": { "page": 17 },
+      "confidence": 0.99
+    }
+  ],
+  "trends": [],
+  "risks": [],
+  "opportunities": [],
+  "recommendedVisuals": [{ "type": "line", "factIds": ["fact_42"] }]
+}
