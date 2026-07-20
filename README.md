@@ -58,6 +58,82 @@ pnpm --filter @financial-slides/web dev
 uv run --package financial-slides-api uvicorn financial_slides_api.main:app --reload
 ```
 
+## Adding dependencies
+
+Install a dependency in the workspace that directly imports and uses it. Avoid
+installing application dependencies at the repository root.
+
+### React frontend
+
+Frontend dependencies belong to `apps/web/package.json`:
+
+```bash
+# Runtime dependency
+pnpm --filter @financial-slides/web add <package>
+
+# Development-only dependency
+pnpm --filter @financial-slides/web add --save-dev <package>
+```
+
+For example:
+
+```bash
+pnpm --filter @financial-slides/web add react-hook-form
+```
+
+### FastAPI backend
+
+Backend dependencies belong to `services/api/pyproject.toml` and are locked in
+the root `uv.lock`:
+
+```bash
+# Runtime dependency
+uv add --package financial-slides-api <package>
+
+# Development-only dependency
+uv add --package financial-slides-api --dev <package>
+```
+
+For example:
+
+```bash
+uv add --package financial-slides-api sqlalchemy
+```
+
+### Presentation harness
+
+Presentation-generation dependencies belong to
+`packages/presentation-harness/package.json`:
+
+```bash
+# Runtime dependency
+pnpm --filter @financial-slides/presentation-harness add <package>
+
+# Development-only dependency
+pnpm --filter @financial-slides/presentation-harness add --save-dev <package>
+```
+
+For example:
+
+```bash
+pnpm --filter @financial-slides/presentation-harness add pptxgenjs
+```
+
+### Repository-wide tools
+
+Only tools used by the entire repository, such as formatters or task runners,
+belong at the root:
+
+```bash
+pnpm add --workspace-root --save-dev <package>
+```
+
+After adding or removing dependencies, commit the relevant manifest and its
+lockfile together:
+
+- JavaScript: the workspace `package.json` and `pnpm-lock.yaml`
+- Python: the workspace `pyproject.toml` and `uv.lock`
+
 ## Current status
 
 This is the initial monorepo foundation. It includes a working API health route,
