@@ -1,0 +1,77 @@
+name: Continuous Improvement
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    name: Repository baseline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify required project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s README.md
+
+      - name: Check Python syntax when Python files exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find . -type f -name '*.py' -not -path './.git/*' -print -quit | grep -q .; then
+            python -m compileall -q .
+          else
+            echo "No Python files yet; skipping syntax check."
+          fi
+
+      - name: Validate Node manifest when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f package.json ]; then
+            node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
+          else
+            echo "No package.json yet; skipping manifest check."
+          fi
+
+      - name: Run Python tests when configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f pytest.ini ] || [ -f pyproject.toml ] || [ -f setup.cfg ]; then
+            if python -c "import pytest" 2>/dev/null; then
+              python -m pytest -q
+            else
+              echo "pytest is not installed yet; add dependency installation when the stack is finalized."
+            fi
+          else
+            echo "No Python test configuration yet; skipping tests."
+          fi
+
+      - name: Run Node CI script when configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ] && [ -f package.json ] && node -e "const p=require('./package.json'); process.exit(p.scripts?.ci ? 0 : 1)"; then
+            npm ci
+            npm run ci
+          else
+            echo "No package-lock.json plus npm ci script yet; skipping Node tests."
+          fi
