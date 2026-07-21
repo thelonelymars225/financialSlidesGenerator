@@ -1,36 +1,35 @@
-:root {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #13231f;
-  background: #f3f5f0;
-  font-synthesis: none;
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-* { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; }
-button, input, textarea, select { font: inherit; }
+* {
+  box-sizing: border-box;
+}
 
-.shell { width: min(920px, calc(100% - 32px)); margin: 0 auto; padding: 72px 0; }
-.hero { max-width: 740px; margin-bottom: 36px; }
-.eyebrow { color: #397c65; font-size: 0.78rem; font-weight: 750; letter-spacing: 0.12em; text-transform: uppercase; }
-h1 { max-width: 700px; margin: 12px 0 16px; font-size: clamp(2.5rem, 7vw, 5.2rem); line-height: 0.98; letter-spacing: -0.055em; }
-.hero p { max-width: 610px; color: #51615b; font-size: 1.12rem; line-height: 1.6; }
+html {
+  background: #f5f5f4;
+}
 
-.card { padding: 28px; border: 1px solid #d8ded8; border-radius: 22px; background: #fff; box-shadow: 0 24px 70px rgba(29, 58, 48, 0.08); }
-.tabs { display: flex; gap: 8px; margin-bottom: 24px; }
-.tabs button { padding: 9px 14px; border: 0; border-radius: 999px; color: #53615c; background: #eef1ed; cursor: pointer; }
-.tabs button.active { color: white; background: #193e32; }
-label > span, .dropzone span { display: block; margin-bottom: 8px; color: #59665f; font-size: 0.86rem; }
-textarea, select, input[type="number"] { width: 100%; border: 1px solid #ccd5cf; border-radius: 10px; padding: 12px; background: #fbfcfa; }
-.dropzone { display: grid; min-height: 180px; place-content: center; padding: 28px; border: 1px dashed #9fb3a9; border-radius: 14px; text-align: center; background: #f7faf7; cursor: pointer; }
-.dropzone strong { margin-bottom: 8px; font-size: 1.1rem; }
-.dropzone input { max-width: 270px; }
-.options { display: grid; grid-template-columns: 1fr 140px; gap: 18px; margin-top: 20px; }
-.primary { width: 100%; margin-top: 24px; padding: 14px 18px; border: 0; border-radius: 12px; color: white; background: #cb5b37; font-weight: 750; cursor: pointer; }
-.primary:disabled { cursor: not-allowed; opacity: 0.5; }
-.message { margin: 16px 0 0; color: #397c65; text-align: center; }
+html.dark {
+  background: #0b1210;
+}
 
-@media (max-width: 600px) {
-  .shell { padding: 40px 0; }
-  .card { padding: 20px; }
-  .options { grid-template-columns: 1fr; }
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
 }
