@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "0.1",
+  "documentId": "document-chart-001",
+  "source": {
+    "sourceId": "source-chart-001",
+    "inputType": "file",
+    "mediaType": "application/pdf",
+    "fileName": "safe-chart-report.pdf"
+  },
+  "pages": [
+    {
+      "pageNumber": 3,
+      "width": 612,
+      "height": 792,
+      "coordinateUnit": "pt",
+      "blocks": [
+        {
+          "id": "chart-1",
+          "type": "image",
+          "order": 0,
+          "role": "chart",
+          "altText": "Line chart showing revenue rising from USD 10.9 million to USD 12.4 million.",
+          "assetRef": "page-3/chart-1.png",
+          "numericValues": [
+            {
+              "displayedValue": "$10.9m",
+              "value": 10900000,
+              "currency": "USD",
+              "scaleFactor": 1000000,
+              "period": "Q2 2025"
+            },
+            {
+              "displayedValue": "$12.4m",
+              "value": 12400000,
+              "currency": "USD",
+              "scaleFactor": 1000000,
+              "period": "Q2 2026"
+            }
+          ],
+          "source": {
+            "sourceId": "source-chart-001",
+            "pageNumber": 3,
+            "sectionPath": ["Revenue trend"],
+            "boundingBox": {
+              "left": 65,
+              "top": 165,
+              "right": 550,
+              "bottom": 455,
+              "unit": "pt"
+            }
+          },
+          "confidence": 0.86,
+          "extraction": {
+            "method": "vlm",
+            "provider": "replaceable-vision-provider",
+            "model": "low-cost-vision-model"
+          },
+          "warnings": [
+            {
+              "code": "chart.numeric_review_required",
+              "severity": "warning",
+              "message": "Validate chart values against native text or OCR evidence before analysis."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

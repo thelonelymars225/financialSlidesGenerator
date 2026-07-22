@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "0.1",
+  "documentId": "document-scan-001",
+  "source": {
+    "sourceId": "source-scan-001",
+    "inputType": "file",
+    "mediaType": "image/png",
+    "fileName": "safe-scanned-page.png"
+  },
+  "pages": [
+    {
+      "pageNumber": 1,
+      "width": 2480,
+      "height": 3508,
+      "coordinateUnit": "px",
+      "blocks": [
+        {
+          "id": "scan-text-1",
+          "type": "text",
+          "order": 0,
+          "text": "Operating expenses 3,800,000 SAR",
+          "numericValues": [
+            {
+              "displayedValue": "3,800,000 SAR",
+              "value": 3800000,
+              "currency": "SAR",
+              "scaleFactor": 1
+            }
+          ],
+          "source": {
+            "sourceId": "source-scan-001",
+            "pageNumber": 1,
+            "sectionPath": ["Operating expenses"],
+            "boundingBox": {
+              "left": 210,
+              "top": 540,
+              "right": 2110,
+              "bottom": 690,
+              "unit": "px"
+            }
+          },
+          "confidence": 0.84,
+          "extraction": { "method": "ocr", "provider": "local-ocr" },
+          "warnings": [
+            {
+              "code": "ocr.low_confidence",
+              "severity": "warning",
+              "message": "Review the extracted amount against the source image."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "code": "document.review_required",
+      "severity": "warning",
+      "message": "At least one block is below the automatic-acceptance confidence threshold."
+    }
+  ]
+}

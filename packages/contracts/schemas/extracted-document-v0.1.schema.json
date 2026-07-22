@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://financialslidesgenerator.local/schemas/extracted-document-v0.1.schema.json",
+  "title": "Extracted Document v0.1",
+  "description": "Provider-neutral output from native parsers, OCR, document APIs, and vision models.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "documentId", "source", "pages", "warnings"],
+  "properties": {
+    "schemaVersion": { "const": "0.1" },
+    "documentId": { "$ref": "#/$defs/nonEmptyString" },
+    "source": { "$ref": "#/$defs/documentSource" },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/page" }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/warning" }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "documentSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "inputType", "mediaType"],
+      "properties": {
+        "sourceId": { "$ref": "#/$defs/nonEmptyString" },
+        "inputType": { "enum": ["file", "text"] },
+        "mediaType": { "$ref": "#/$defs/nonEmptyString" },
+        "fileName": { "$ref": "#/$defs/nonEmptyString" },
+        "contentHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "inputType": { "const": "file" } },
+            "required": ["inputType"]
+          },
+          "then": {
+            "properties": {
+              "fileName": { "$ref": "#/$defs/nonEmptyString" }
+            },
+            "required": ["fileName"]
+          }
+        }
+      ]
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "message": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "boundingBox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "top", "right", "bottom", "unit"],
+      "properties": {
+        "left": { "type": "number", "minimum": 0 },
+        "top": { "type": "number", "minimum": 0 },
+        "right": { "type": "number", "minimum": 0 },
+        "bottom": { "type": "number", "minimum": 0 },
+        "unit": { "enum": ["pt", "px"] }
+      }
+    },
+    "sourceLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "pageNumber", "sectionPath"],
+      "properties": {
+        "sourceId": { "$ref": "#/$defs/nonEmptyString" },
+        "pageNumber": { "type": "integer", "minimum": 1 },
+        "sectionPath": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" }
+        },
+        "boundingBox": { "$ref": "#/$defs/boundingBox" }
+      }
+    },
+    "extractionMethod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method"],
+      "properties": {
+        "method": {
+          "enum": [
+            "pasted_text",
+            "native_pdf",
+            "native_office",
+            "ocr",
+            "document_api",
+            "vlm",
+            "manual"
+          ]
+        },
+        "provider": { "$ref": "#/$defs/nonEmptyString" },
+        "model": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "numericValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displayedValue", "value"],
+      "properties": {
+        "displayedValue": { "$ref": "#/$defs/nonEmptyString" },
+        "value": { "type": "number" },
+        "unit": { "$ref": "#/$defs/nonEmptyString" },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "scaleFactor": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "period": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "blockBase": {
+      "type": "object",
+      "required": ["id", "type", "order", "source", "confidence", "extraction", "warnings"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "type": { "enum": ["text", "table", "image"] },
+        "order": { "type": "integer", "minimum": 0 },
+        "source": { "$ref": "#/$defs/sourceLocation" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "extraction": { "$ref": "#/$defs/extractionMethod" },
+        "warnings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/warning" }
+        }
+      }
+    },
+    "textBlock": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/blockBase" },
+        {
+          "type": "object",
+          "required": ["text"],
+          "properties": {
+            "type": { "const": "text" },
+            "text": { "$ref": "#/$defs/nonEmptyString" },
+            "numericValues": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/numericValue" }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "tableCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row", "column", "rowSpan", "columnSpan", "text", "confidence", "source"],
+      "properties": {
+        "row": { "type": "integer", "minimum": 0 },
+        "column": { "type": "integer", "minimum": 0 },
+        "rowSpan": { "type": "integer", "minimum": 1 },
+        "columnSpan": { "type": "integer", "minimum": 1 },
+        "text": { "type": "string" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "source": { "$ref": "#/$defs/sourceLocation" },
+        "numericValue": { "$ref": "#/$defs/numericValue" }
+      }
+    },
+    "tableBlock": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/blockBase" },
+        {
+          "type": "object",
+          "required": ["rowCount", "columnCount", "cells"],
+          "properties": {
+            "type": { "const": "table" },
+            "caption": { "$ref": "#/$defs/nonEmptyString" },
+            "rowCount": { "type": "integer", "minimum": 1 },
+            "columnCount": { "type": "integer", "minimum": 1 },
+            "cells": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/tableCell" }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "imageBlock": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/blockBase" },
+        {
+          "type": "object",
+          "required": ["role"],
+          "properties": {
+            "type": { "const": "image" },
+            "role": { "enum": ["chart", "figure", "diagram", "logo", "photograph", "other"] },
+            "altText": { "$ref": "#/$defs/nonEmptyString" },
+            "assetRef": { "$ref": "#/$defs/nonEmptyString" },
+            "numericValues": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/numericValue" }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "block": {
+      "oneOf": [
+        { "$ref": "#/$defs/textBlock" },
+        { "$ref": "#/$defs/tableBlock" },
+        { "$ref": "#/$defs/imageBlock" }
+      ]
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pageNumber", "width", "height", "coordinateUnit", "blocks"],
+      "properties": {
+        "pageNumber": { "type": "integer", "minimum": 1 },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "coordinateUnit": { "enum": ["pt", "px"] },
+        "blocks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/block" }
+        }
+      }
+    }
+  }
+}

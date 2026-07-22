@@ -1,7 +1,17 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
-const example = JSON.parse(await readFile(new URL("../examples/analysis-v0.1.json", import.meta.url)));
-if (example.schemaVersion !== "0.1" || !Array.isArray(example.facts)) {
-  throw new Error("Analysis example does not satisfy the minimum v0.1 contract.");
+import { validateContract } from "./contract-validation.mjs";
+
+const examplesDirectory = new URL("../examples/", import.meta.url);
+const exampleFiles = (await readdir(examplesDirectory)).filter((fileName) => fileName.endsWith(".json"));
+
+for (const fileName of exampleFiles) {
+  const example = JSON.parse(await readFile(new URL(fileName, examplesDirectory), "utf8"));
+  const contractName = fileName.startsWith("analysis-") ? "analysis" : "extractedDocument";
+  const result = await validateContract(contractName, example);
+  if (!result.valid) {
+    throw new Error(`${fileName} is invalid:\n- ${result.errors.join("\n- ")}`);
+  }
 }
-console.log("Contract examples are valid JSON with the expected version.");
+
+console.log(`${exampleFiles.length} contract examples passed schema and semantic validation.`);
