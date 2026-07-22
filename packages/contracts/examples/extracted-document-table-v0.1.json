@@ -1,0 +1,106 @@
+{
+  "schemaVersion": "0.1",
+  "documentId": "document-table-001",
+  "source": {
+    "sourceId": "source-report-001",
+    "inputType": "file",
+    "mediaType": "application/pdf",
+    "fileName": "safe-quarterly-report.pdf",
+    "contentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "pages": [
+    {
+      "pageNumber": 7,
+      "width": 612,
+      "height": 792,
+      "coordinateUnit": "pt",
+      "blocks": [
+        {
+          "id": "table-1",
+          "type": "table",
+          "order": 0,
+          "caption": "Quarterly revenue",
+          "rowCount": 2,
+          "columnCount": 2,
+          "cells": [
+            {
+              "row": 0,
+              "column": 0,
+              "rowSpan": 1,
+              "columnSpan": 1,
+              "text": "Period",
+              "confidence": 0.99,
+              "source": {
+                "sourceId": "source-report-001",
+                "pageNumber": 7,
+                "sectionPath": ["Financial results", "Quarterly revenue"]
+              }
+            },
+            {
+              "row": 0,
+              "column": 1,
+              "rowSpan": 1,
+              "columnSpan": 1,
+              "text": "Revenue (USD millions)",
+              "confidence": 0.99,
+              "source": {
+                "sourceId": "source-report-001",
+                "pageNumber": 7,
+                "sectionPath": ["Financial results", "Quarterly revenue"]
+              }
+            },
+            {
+              "row": 1,
+              "column": 0,
+              "rowSpan": 1,
+              "columnSpan": 1,
+              "text": "Q2 2026",
+              "confidence": 0.99,
+              "source": {
+                "sourceId": "source-report-001",
+                "pageNumber": 7,
+                "sectionPath": ["Financial results", "Quarterly revenue"]
+              }
+            },
+            {
+              "row": 1,
+              "column": 1,
+              "rowSpan": 1,
+              "columnSpan": 1,
+              "text": "$12.4",
+              "confidence": 0.98,
+              "source": {
+                "sourceId": "source-report-001",
+                "pageNumber": 7,
+                "sectionPath": ["Financial results", "Quarterly revenue"]
+              },
+              "numericValue": {
+                "displayedValue": "$12.4",
+                "value": 12400000,
+                "currency": "USD",
+                "scaleFactor": 1000000,
+                "period": "Q2 2026"
+              }
+            }
+          ],
+          "source": {
+            "sourceId": "source-report-001",
+            "pageNumber": 7,
+            "sectionPath": ["Financial results", "Quarterly revenue"],
+            "boundingBox": {
+              "left": 72,
+              "top": 180,
+              "right": 540,
+              "bottom": 310,
+              "unit": "pt"
+            }
+          },
+          "confidence": 0.98,
+          "extraction": { "method": "native_pdf", "provider": "local-parser" },
+          "warnings": []
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "0.1",
+  "documentId": "document-text-001",
+  "source": {
+    "sourceId": "source-text-001",
+    "inputType": "text",
+    "mediaType": "text/plain"
+  },
+  "pages": [
+    {
+      "pageNumber": 1,
+      "width": 612,
+      "height": 792,
+      "coordinateUnit": "pt",
+      "blocks": [
+        {
+          "id": "text-1",
+          "type": "text",
+          "order": 0,
+          "text": "Revenue increased to $12.4 million in Q2 2026.",
+          "numericValues": [
+            {
+              "displayedValue": "$12.4 million",
+              "value": 12400000,
+              "currency": "USD",
+              "scaleFactor": 1000000,
+              "period": "Q2 2026"
+            }
+          ],
+          "source": {
+            "sourceId": "source-text-001",
+            "pageNumber": 1,
+            "sectionPath": ["Pasted input"]
+          },
+          "confidence": 1,
+          "extraction": { "method": "pasted_text" },
+          "warnings": []
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

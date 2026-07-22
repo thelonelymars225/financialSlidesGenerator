@@ -28,7 +28,9 @@ preflight, rendering, and bounded repair. Queue technology remains undecided.
 ### `packages/contracts`
 
 Contains versioned JSON Schema files and examples shared across Python and
-TypeScript. Analysis objects must not contain renderer-specific HTML.
+TypeScript. The Extracted Document contract is the provider-neutral boundary
+between parsers and downstream retrieval or analysis; Analysis objects must not
+contain parser responses or renderer-specific HTML.
 
 ### `packages/presentation-harness`
 
@@ -50,7 +52,8 @@ claims. No real confidential company reports belong here.
 
 ```text
 web -> API -> job queue -> worker
-                         |-> extract and retrieve source sections
+                         |-> extract to Extracted Document v0.1
+                         |-> retrieve source sections with preserved provenance
                          |-> create and validate Analysis v0.1
                          |-> compile a renderer-neutral DeckSpec
                          |-> preflight and fit approved layouts
