@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "0.2",
+  "analysisId": "analysis-q2-2026",
+  "sourceDocumentIds": ["document-financial-report"],
+  "executiveSummary": [
+    "Revenue reached $12.4 million in Q2 2026, increasing 24% from Q1."
+  ],
+  "metrics": [
+    {
+      "id": "revenue-q1-2026",
+      "name": "Revenue",
+      "displayedValue": "$10.0m",
+      "value": 10,
+      "normalizedValue": 10000000,
+      "unit": {
+        "kind": "currency",
+        "code": "USD",
+        "scaleFactor": 1000000
+      },
+      "period": {
+        "type": "quarter",
+        "label": "Q1 2026",
+        "startDate": "2026-01-01",
+        "endDate": "2026-03-31"
+      },
+      "evidence": [
+        {
+          "documentId": "document-financial-report",
+          "pageNumber": 1,
+          "blockId": "page-1-table-1",
+          "quote": "Q1 2026 | $10.0m"
+        }
+      ],
+      "confidence": 0.99
+    },
+    {
+      "id": "revenue-q2-2026",
+      "name": "Revenue",
+      "displayedValue": "$12.4m",
+      "value": 12.4,
+      "normalizedValue": 12400000,
+      "unit": {
+        "kind": "currency",
+        "code": "USD",
+        "scaleFactor": 1000000
+      },
+      "period": {
+        "type": "quarter",
+        "label": "Q2 2026",
+        "startDate": "2026-04-01",
+        "endDate": "2026-06-30"
+      },
+      "evidence": [
+        {
+          "documentId": "document-financial-report",
+          "pageNumber": 1,
+          "blockId": "page-1-table-1",
+          "quote": "Q2 2026 | $12.4m"
+        }
+      ],
+      "confidence": 0.99
+    },
+    {
+      "id": "revenue-growth-q2-2026",
+      "name": "Quarter-over-quarter revenue growth",
+      "displayedValue": "24%",
+      "value": 24,
+      "normalizedValue": 0.24,
+      "unit": {
+        "kind": "percentage",
+        "code": "%",
+        "scaleFactor": 0.01
+      },
+      "period": {
+        "type": "quarter",
+        "label": "Q2 2026",
+        "startDate": "2026-04-01",
+        "endDate": "2026-06-30"
+      },
+      "evidence": [
+        {
+          "documentId": "document-financial-report",
+          "pageNumber": 1,
+          "blockId": "page-1-table-1"
+        }
+      ],
+      "confidence": 0.99,
+      "calculation": {
+        "operation": "percentage_change",
+        "operandMetricIds": ["revenue-q1-2026", "revenue-q2-2026"]
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "finding-revenue-growth",
+      "kind": "trend",
+      "title": "Revenue accelerated",
+      "statement": "Revenue increased 24% quarter over quarter to $12.4 million.",
+      "metricIds": ["revenue-q2-2026", "revenue-growth-q2-2026"],
+      "evidence": [
+        {
+          "documentId": "document-financial-report",
+          "pageNumber": 1,
+          "blockId": "page-1-table-1"
+        }
+      ],
+      "confidence": 0.99
+    }
+  ],
+  "slideIntents": [
+    {
+      "id": "slide-revenue-trend",
+      "purpose": "trend",
+      "title": "Revenue accelerated in Q2",
+      "findingIds": ["finding-revenue-growth"],
+      "metricIds": [
+        "revenue-q1-2026",
+        "revenue-q2-2026",
+        "revenue-growth-q2-2026"
+      ],
+      "preferredVisual": "bar",
+      "priority": 1
+    }
+  ]
+}
