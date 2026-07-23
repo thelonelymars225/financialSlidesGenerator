@@ -24,6 +24,10 @@ performed inside a request.
 
 Owns long-running stages: extraction, retrieval, analysis, validation, layout,
 preflight, rendering, and bounded repair. Queue technology remains undecided.
+Native extraction currently routes pasted text and signature-verified,
+born-digital PDFs through replaceable local parser adapters. Every route emits
+Extracted Document v0.1 plus separate duration, route, and external-cost
+telemetry. OCR and model-backed fallbacks remain downstream escalation paths.
 
 ### `packages/contracts`
 
@@ -68,3 +72,14 @@ web -> API -> job queue -> worker
 - Contracts must not depend on applications, services, model SDKs, or renderers.
 - Python services communicate with Node presentation code through versioned data
   and a future process/queue boundary, not by importing TypeScript internals.
+
+## Native extraction boundary
+
+- File signatures, not filename extensions, select a parser.
+- Parser adapters own third-party library effects; routing, limits, and error
+  mapping remain deterministic and directly testable.
+- The FastAPI application service may invoke the worker extraction boundary,
+  while HTTP controllers remain free of parser logic.
+- Local routes report zero external-service cost. Encrypted, corrupt,
+  unsupported, oversized, over-page-limit, and timed-out inputs return stable
+  typed errors.
