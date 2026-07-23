@@ -6,10 +6,17 @@ build-backend = "setuptools.build_meta"
 name = "financial-slides-api"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["fastapi>=0.115", "uvicorn[standard]>=0.32"]
+dependencies = [
+  "fastapi>=0.115",
+  "financial-slides-worker",
+  "uvicorn[standard]>=0.32",
+]
 
 [project.optional-dependencies]
 dev = ["httpx>=0.28", "pytest>=8.3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.uv.sources]
+financial-slides-worker = { workspace = true }
