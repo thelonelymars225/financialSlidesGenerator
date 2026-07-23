@@ -21,6 +21,26 @@ JSON Schema enforces the portable shape. `scripts/contract-validation.mjs` adds
 cross-field checks that JSON Schema cannot express clearly, including unique page
 and block identities, page-consistent provenance, valid geometry, and table bounds.
 
+## Analysis v0.2
+
+`schemas/analysis-v0.2.schema.json` is the evidence-grounded boundary between
+financial analysis and slide planning. It adds:
+
+- normalized metrics with displayed values, periods, units, scale factors,
+  evidence, and confidence;
+- findings typed as facts, trends, risks, opportunities, or recommendations;
+- slide intents that reference validated findings and metrics;
+- deterministic checks for identifiers, references, source grounding, and unit
+  normalization; and
+- code-checked sum, difference, ratio, and percentage-change calculations.
+
+`analysis-v0.1.schema.json` remains available and valid for backward compatibility.
+New producers should emit v0.2. Unknown versions are rejected rather than guessed.
+Calculation operands are ordered: difference is first minus second, ratio is first
+divided by second, and percentage change is baseline followed by current value.
+Currency metrics normalize through their declared scale factor; percentages use
+`0.01`, while counts and ratios use `1`.
+
 ## Versioning rules
 
 - Published schema files are immutable. A behavior-changing revision gets a new
