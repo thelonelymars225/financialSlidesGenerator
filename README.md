@@ -58,6 +58,17 @@ pnpm --filter @financial-slides/web dev
 uv run --package financial-slides-api uvicorn financial_slides_api.main:app --reload
 ```
 
+Queued extraction runs outside the web request. Process a bounded batch from
+the durable secretless queue with:
+
+```bash
+uv run --package financial-slides-api python -m financial_slides_api.worker --limit 4
+```
+
+Set `FINANCIAL_SLIDES_JOB_DB` to a SQLite path shared by the API and worker. The
+repository, queue, source-store, and result-store ports remain replaceable when
+managed cloud infrastructure is selected.
+
 ## Adding dependencies
 
 Install a dependency in the workspace that directly imports and uses it. Avoid
