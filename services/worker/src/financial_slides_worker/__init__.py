@@ -5,6 +5,8 @@ from financial_slides_worker.extraction import (
     ExtractionLimits,
     ExtractionResult,
     ExtractionService,
+    ExtractionTelemetry,
+    ExtractionTimeoutError,
     FileSource,
     TextSource,
 )
@@ -14,6 +16,8 @@ __all__ = [
     "ExtractionLimits",
     "ExtractionResult",
     "ExtractionService",
+    "ExtractionTelemetry",
+    "ExtractionTimeoutError",
     "FileSource",
     "TextSource",
 ]

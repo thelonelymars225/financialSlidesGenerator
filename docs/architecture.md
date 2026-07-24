@@ -83,3 +83,24 @@ web -> API -> job queue -> worker
 - Local routes report zero external-service cost. Encrypted, corrupt,
   unsupported, oversized, over-page-limit, and timed-out inputs return stable
   typed errors.
+
+## Durable extraction-job boundary
+
+- FastAPI controllers validate transport input and delegate to an application
+  service; they never perform extraction inside the request.
+- Immutable job models define queued, running, succeeded, failed, and cancelled
+  states. State transitions, idempotency keys, retry decisions, and exponential
+  backoff are deterministic.
+- Repository, queue, source-store, and result-store protocols keep infrastructure
+  replaceable. The secretless baseline uses one SQLite adapter so API and worker
+  processes can reopen the same durable state after restart.
+- Source bytes are persisted with the job rather than referenced from a
+  developer laptop. A cloud persistent volume can host the baseline database;
+  managed queue and object-store adapters can replace it without changing HTTP
+  contracts or extraction logic.
+- The worker claims queued jobs atomically, enforces bounded attempts and work
+  per run, emits the canonical extracted-document contract, records route,
+  duration, retry count, and estimated external cost, and stores typed failures.
+- `X-Owner-ID` scopes status, result, and cancellation access. The development
+  default is `local-development`; production authentication remains a separate
+  adapter concern.
