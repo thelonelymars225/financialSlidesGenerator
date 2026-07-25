@@ -72,7 +72,12 @@ class ExtractionService:
         return ExtractionResult(
             document=document,
             telemetry=ExtractionTelemetry(
-                route=extractor.route,
+                route=(
+                    f"{extractor.route}+fallback"
+                    if context.usage.provider_pages
+                    else extractor.route
+                ),
                 duration_ms=max(0.0, (self._clock() - started) * 1000),
+                external_cost_usd=context.usage.external_cost_usd,
             ),
         )

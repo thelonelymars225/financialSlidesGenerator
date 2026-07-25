@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["httpx>=0.28", "pytest>=8.3"]
+dev = ["httpx2>=2.9,<3", "pytest>=8.3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -19,8 +19,11 @@ from financial_slides_worker.extraction import (
     ExtractionLimits,
     ExtractionService,
     ExtractionTimeoutError,
+    FallbackReason,
     FileSource,
     MediaTypeMismatchError,
+    ProviderPageResult,
+    SelectivePageFallback,
     TextSource,
     UnsupportedFileError,
 )
@@ -125,6 +128,48 @@ class FakeOcrEngine:
         if isinstance(output, Exception):
             raise output
         return output
+
+
+class FakeFallbackProvider:
+    method = "document_api"
+    name = "fixture-document-api"
+    model = "fixture-v1"
+    retains_data = False
+
+    def __init__(self) -> None:
+        self.requests = []
+
+    def extract_page(self, request, *, timeout_seconds):
+        self.requests.append(request)
+        page = {
+            **request.evidence_page,
+            "blocks": [
+                {
+                    "id": f"page-{request.page_number}-document-api-text-1",
+                    "type": "text",
+                    "order": 0,
+                    "text": "Corrected operating expenses were $12.4m",
+                    "source": {
+                        "sourceId": request.evidence_page["blocks"][0]["source"]["sourceId"],
+                        "pageNumber": request.page_number,
+                        "sectionPath": [f"Page {request.page_number}"],
+                    },
+                    "confidence": 0.96,
+                    "extraction": {
+                        "method": self.method,
+                        "provider": self.name,
+                        "model": self.model,
+                    },
+                    "warnings": [],
+                }
+            ],
+        }
+        return ProviderPageResult(
+            page,
+            input_tokens=100,
+            output_tokens=40,
+            external_cost_usd=0.01,
+        )
 
 
 def test_pasted_text_emits_canonical_contract_with_zero_external_cost(
@@ -338,6 +383,56 @@ def test_rotated_and_low_resolution_scans_remain_bounded_and_flag_low_quality(
     assert block["warnings"][0]["code"] == "ocr.low_confidence"
     assert any(warning["code"] == "ocr.low_confidence" for warning in result.document["warnings"])
     validate_contract(result.document, tmp_path)
+
+
+def test_low_confidence_ocr_escalates_only_its_page_to_document_api(
+    tmp_path: Path,
+) -> None:
+    engine = FakeOcrEngine([ocr_page(confidence=0.5)])
+    provider = FakeFallbackProvider()
+    extractor = PdfPlumberExtractor(
+        engine,
+        SelectivePageFallback((provider,)),
+    )
+
+    result = ExtractionService(extractors=(extractor,)).extract_file(
+        FileSource(
+            data=scanned_pdf("Operating expenses were $12.4m"),
+            file_name="low-confidence.pdf",
+        )
+    )
+
+    assert len(provider.requests) == 1
+    assert provider.requests[0].reason is FallbackReason.OCR_LOW_CONFIDENCE
+    assert provider.requests[0].page_number == 1
+    assert provider.requests[0].image_png.startswith(b"\x89PNG")
+    assert result.document["pages"][0]["blocks"][0]["extraction"]["method"] == "document_api"
+    assert result.telemetry.route == "native_pdf+fallback"
+    assert result.telemetry.external_cost_usd == 0.01
+    assert any(
+        warning["code"] == "fallback.applied.document_api"
+        for warning in result.document["warnings"]
+    )
+    validate_contract(result.document, tmp_path)
+
+
+def test_provider_is_not_called_without_an_explicit_fallback_reason() -> None:
+    provider = FakeFallbackProvider()
+    extractor = PdfPlumberExtractor(
+        FakeOcrEngine([]),
+        SelectivePageFallback((provider,)),
+    )
+
+    result = ExtractionService(extractors=(extractor,)).extract_file(
+        FileSource(
+            data=fixture_bytes("native-financial-report.pdf.b64"),
+            file_name="native.pdf",
+        )
+    )
+
+    assert provider.requests == []
+    assert result.telemetry.route == "native_pdf"
+    assert result.telemetry.external_cost_usd == 0
 
 
 def test_mixed_pdf_routes_only_scanned_page_to_ocr(tmp_path: Path) -> None:

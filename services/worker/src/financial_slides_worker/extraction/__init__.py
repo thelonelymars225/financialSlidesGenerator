@@ -10,6 +10,16 @@ from financial_slides_worker.extraction.errors import (
     MediaTypeMismatchError,
     UnsupportedFileError,
 )
+from financial_slides_worker.extraction.fallback import (
+    DocumentApiPageProvider,
+    FallbackReason,
+    PageFallbackCandidate,
+    PageFallbackProvider,
+    PageFallbackRequest,
+    ProviderPageResult,
+    SelectivePageFallback,
+    VisionModelPageProvider,
+)
 from financial_slides_worker.extraction.models import (
     ExtractionLimits,
     ExtractionResult,
@@ -21,6 +31,7 @@ from financial_slides_worker.extraction.service import ExtractionService
 
 __all__ = [
     "CorruptFileError",
+    "DocumentApiPageProvider",
     "EmptyInputError",
     "EncryptedFileError",
     "ExtractionError",
@@ -30,8 +41,15 @@ __all__ = [
     "ExtractionService",
     "ExtractionTelemetry",
     "ExtractionTimeoutError",
+    "FallbackReason",
     "FileSource",
     "MediaTypeMismatchError",
+    "PageFallbackCandidate",
+    "PageFallbackProvider",
+    "PageFallbackRequest",
+    "ProviderPageResult",
+    "SelectivePageFallback",
     "TextSource",
     "UnsupportedFileError",
+    "VisionModelPageProvider",
 ]
