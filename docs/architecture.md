@@ -28,8 +28,9 @@ Native extraction currently routes pasted text and signature-verified,
 born-digital PDFs through replaceable local parser adapters. Scanned and
 low-text PDF pages use bounded local Tesseract OCR with confidence-based review
 warnings. Every route emits Extracted Document v0.1 plus separate duration,
-route, and external-cost telemetry. Model-backed fallbacks remain downstream
-escalation paths.
+route, and external-cost telemetry. Optional document-API and VLM adapters
+receive only explicitly selected low-confidence or visual pages, enforce shared
+budgets, and must return the same canonical contract.
 
 ### `packages/contracts`
 
@@ -88,6 +89,9 @@ web -> API -> job queue -> worker
 - OCR is English-only until Arabic enters the approved MVP. It is capped
   separately from the document page limit and flags failed or low-confidence
   pages instead of silently accepting them.
+- Provider fallback is page-level and opt-in. It requires an explicit routing
+  reason, disabled provider retention, contract-valid page evidence, bounded
+  attempts/time/tokens/cost, and preservation of reliable financial values.
 
 ## Durable extraction-job boundary
 
