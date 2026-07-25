@@ -26,6 +26,7 @@ class ExtractionLimits:
     max_file_bytes: int = 25 * 1024 * 1024
     max_text_bytes: int = 2 * 1024 * 1024
     max_pages: int = 200
+    max_ocr_pages: int = 20
     timeout_seconds: float = 30.0
 
 
@@ -51,3 +52,9 @@ class ExtractionContext:
     def ensure_time_remaining(self) -> None:
         if self.clock() > self.deadline:
             raise ExtractionTimeoutError()
+
+    def seconds_remaining(self) -> float:
+        remaining = self.deadline - self.clock()
+        if remaining <= 0:
+            raise ExtractionTimeoutError()
+        return remaining
