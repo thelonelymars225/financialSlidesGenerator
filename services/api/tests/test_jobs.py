@@ -1,9 +1,12 @@
-from base64 import b64encode
+from base64 import b64decode, b64encode
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
 
 from financial_slides_api.controllers.jobs import service_dependency
 from financial_slides_api.domain.jobs import (
@@ -14,12 +17,20 @@ from financial_slides_api.domain.jobs import (
 )
 from financial_slides_api.infrastructure.sqlite_jobs import SQLiteJobStore
 from financial_slides_api.main import app
+from financial_slides_api.schemas.jobs import JobResponse, JobResultResponse
 from financial_slides_api.services.jobs import ExtractionJobService
 from financial_slides_api.worker import ExtractionJobWorker
 from financial_slides_worker import (
     ExtractionResult,
     ExtractionTelemetry,
     ExtractionTimeoutError,
+)
+
+REPOSITORY_ROOT = Path(__file__).parents[3]
+INTEGRATION_FIXTURE = REPOSITORY_ROOT / "fixtures/integration/extraction-api-v0.1.json"
+PDF_FIXTURE = REPOSITORY_ROOT / "services/worker/tests/fixtures/native-financial-report.pdf.b64"
+EXTRACTED_DOCUMENT_SCHEMA = (
+    REPOSITORY_ROOT / "packages/contracts/schemas/extracted-document-v0.1.schema.json"
 )
 
 
@@ -278,3 +289,95 @@ def test_api_submit_poll_result_and_typed_failure(tmp_path) -> None:
         )
     finally:
         app.dependency_overrides.clear()
+
+
+def test_real_api_queue_worker_result_vertical_slice_for_text_and_pdf(tmp_path) -> None:
+    clock = MutableClock()
+    service, store = service_and_store(tmp_path, clock)
+    app.dependency_overrides[service_dependency] = lambda: service
+    client = TestClient(app)
+    pdf_base64 = "".join(PDF_FIXTURE.read_text(encoding="ascii").split())
+    cases = (
+        (
+            {
+                "input_mode": "text",
+                "source_text": "Revenue increased to $12.4 million.",
+                "deck_purpose": "management-review",
+                "slide_count": 8,
+                "request_key": "real-text",
+            },
+            "pasted_text",
+        ),
+        (
+            {
+                "input_mode": "file",
+                "file_name": "quarterly-report.pdf",
+                "file_content_base64": pdf_base64,
+                "declared_media_type": "application/pdf",
+                "deck_purpose": "management-review",
+                "slide_count": 8,
+                "request_key": "real-pdf",
+            },
+            "native_pdf",
+        ),
+    )
+    try:
+        for payload, route in cases:
+            submitted = client.post(
+                "/api/jobs",
+                headers={"X-Owner-ID": "integration-owner"},
+                json=payload,
+            )
+            assert submitted.status_code == 202
+            job_id = submitted.json()["id"]
+            assert (
+                client.get(
+                    f"/api/jobs/{job_id}/result",
+                    headers={"X-Owner-ID": "integration-owner"},
+                ).status_code
+                == 409
+            )
+            assert (
+                client.get(
+                    f"/api/jobs/{job_id}",
+                    headers={"X-Owner-ID": "another-owner"},
+                ).status_code
+                == 404
+            )
+
+            assert ExtractionJobWorker(store, clock=clock).run_available() == 1
+            status = client.get(
+                f"/api/jobs/{job_id}",
+                headers={"X-Owner-ID": "integration-owner"},
+            )
+            result = client.get(
+                f"/api/jobs/{job_id}/result",
+                headers={"X-Owner-ID": "integration-owner"},
+            )
+
+            assert status.json()["status"] == "succeeded"
+            assert status.json()["telemetry"]["route"] == route
+            assert result.status_code == 200
+            Draft202012Validator(
+                json.loads(EXTRACTED_DOCUMENT_SCHEMA.read_text(encoding="utf-8"))
+            ).validate(result.json()["document"])
+
+            if route == "native_pdf":
+                page = result.json()["document"]["pages"][0]
+                table = next(block for block in page["blocks"] if block["type"] == "table")
+                assert table["cells"][-1]["text"] == "$12.4m"
+                assert table["source"]["boundingBox"]["unit"] == "pt"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_shared_frontend_fixture_matches_backend_response_models_and_contract() -> None:
+    fixture = json.loads(INTEGRATION_FIXTURE.read_text(encoding="utf-8"))
+
+    JobResultResponse.model_validate(fixture["successful_result"])
+    JobResponse.model_validate(fixture["failed_job"])
+    Draft202012Validator(
+        json.loads(EXTRACTED_DOCUMENT_SCHEMA.read_text(encoding="utf-8"))
+    ).validate(fixture["successful_result"]["document"])
+    encoded_pdf = "".join(PDF_FIXTURE.read_text(encoding="ascii").split())
+    assert b64decode(encoded_pdf, validate=True).startswith(b"%PDF")
