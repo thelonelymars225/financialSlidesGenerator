@@ -3,6 +3,7 @@
 import asyncio
 import math
 import os
+import re
 from collections.abc import Callable, Iterable, Sequence
 from json import loads
 from pathlib import Path
@@ -24,6 +25,14 @@ from financial_slides_api.domain.analysis import (
 from financial_slides_api.ports.analysis import AnalysisProvider
 
 MAX_FEEDBACK_ERRORS = 20
+SCALE_FACTORS = {
+    "k": 1_000,
+    "thousand": 1_000,
+    "m": 1_000_000,
+    "million": 1_000_000,
+    "bn": 1_000_000_000,
+    "billion": 1_000_000_000,
+}
 
 
 def _default_contracts_dir() -> Path:
@@ -41,13 +50,41 @@ def _validator(schema_path: Path) -> Draft202012Validator:
     return Draft202012Validator(schema)
 
 
+def _text_numbers(text: str) -> tuple[SourceNumber, ...]:
+    period_match = re.search(r"\bQ[1-4]\s+20\d{2}\b", text, flags=re.IGNORECASE)
+    period = period_match.group(0) if period_match else None
+    currency = re.search(
+        r"\$(?P<number>\d[\d,]*(?:\.\d+)?)\s*(?P<scale>billion|million|thousand|bn|m|k)?",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if currency:
+        scale_label = (currency.group("scale") or "").lower()
+        scale = SCALE_FACTORS.get(scale_label, 1)
+        value = float(currency.group("number").replace(",", "")) * scale
+        return (SourceNumber(currency.group(0), value, None, "USD", scale, period),)
+    percentage = re.search(r"(?P<number>\d+(?:\.\d+)?)\s*%", text)
+    if percentage:
+        return (
+            SourceNumber(
+                percentage.group(0),
+                float(percentage.group("number")) / 100,
+                "%",
+                None,
+                0.01,
+                period,
+            ),
+        )
+    return ()
+
+
 def _numeric_values(block: dict[str, Any]) -> tuple[SourceNumber, ...]:
     values: Iterable[dict[str, Any]]
     if block["type"] == "table":
         values = (cell["numericValue"] for cell in block.get("cells", ()) if "numericValue" in cell)
     else:
         values = block.get("numericValues", ())
-    return tuple(
+    structured = tuple(
         SourceNumber(
             displayed_value=value["displayedValue"],
             value=float(value["value"]),
@@ -58,6 +95,7 @@ def _numeric_values(block: dict[str, Any]) -> tuple[SourceNumber, ...]:
         )
         for value in values
     )
+    return structured or _text_numbers(_block_text(block))
 
 
 def _block_text(block: dict[str, Any]) -> str:

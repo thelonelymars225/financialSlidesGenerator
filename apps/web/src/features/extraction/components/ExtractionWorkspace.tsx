@@ -1,4 +1,5 @@
 import { FormEvent, useMemo, useState } from "react";
+import { SlideGenerationPanel } from "../../generation/components/SlideGenerationPanel";
 import { ExtractionApiError } from "../api";
 import { fileRequest } from "../file";
 import { useExtractionJob } from "../hooks/useExtractionJob";
@@ -153,7 +154,15 @@ export function ExtractionWorkspace() {
         />
       )}
       {extraction.result.isLoading && <p className="mt-5 text-sm text-stone-500" role="status">Loading the validated result…</p>}
-      {extraction.result.data && <ExtractionResultPreview result={extraction.result.data} />}
+      {extraction.result.data && (
+        <>
+          <ExtractionResultPreview result={extraction.result.data} />
+          <SlideGenerationPanel
+            extractionJobId={extraction.result.data.job.id}
+            deckType={deckPurpose}
+          />
+        </>
+      )}
     </section>
   );
 }
