@@ -1,10 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import backendResponses from "../../../../../fixtures/integration/extraction-api-v0.1.json";
 import { createExtractionApi } from "./api";
 import { ExtractionResultPreview } from "./components/ExtractionResultPreview";
 import { JobStatusPanel } from "./components/JobStatusPanel";
 import { submitPollAndLoad } from "./flow";
-import type { CreateJobRequest, ExtractionJob } from "./types";
+import type { CreateJobRequest, ExtractionJob, JobResult } from "./types";
 
 const request: CreateJobRequest = {
   input_mode: "text",
@@ -14,22 +15,19 @@ const request: CreateJobRequest = {
   request_key: "integration-request",
 };
 
-function job(status: ExtractionJob["status"], failure: ExtractionJob["failure"] = null): ExtractionJob {
+const successfulResult = backendResponses.successful_result as JobResult;
+const failedJob = backendResponses.failed_job as ExtractionJob;
+
+function job(status: ExtractionJob["status"]): ExtractionJob {
+  const terminal = ["succeeded", "failed", "cancelled"].includes(status);
   return {
-    id: "4c4f87b3-5a21-487b-b2d0-080ace475214",
-    input_mode: "text",
-    file_name: null,
-    deck_purpose: "management-review",
-    slide_count: 8,
+    ...successfulResult.job,
     status,
-    created_at: "2026-07-25T06:00:00Z",
-    updated_at: "2026-07-25T06:00:01Z",
     started_at: status === "queued" ? null : "2026-07-25T06:00:00Z",
-    finished_at: ["succeeded", "failed", "cancelled"].includes(status) ? "2026-07-25T06:00:01Z" : null,
+    finished_at: terminal ? "2026-07-25T06:00:01Z" : null,
     attempt_count: status === "queued" ? 0 : 1,
-    max_attempts: 3,
-    failure,
-    telemetry: status === "succeeded" ? { route: "pasted_text", duration_ms: 5, retries: 0, external_cost_usd: 0 } : null,
+    failure: null,
+    telemetry: status === "succeeded" ? successfulResult.job.telemetry : null,
   };
 }
 
@@ -39,24 +37,7 @@ describe("submit → poll → render integration", () => {
       new Response(JSON.stringify(job("queued")), { status: 202 }),
       new Response(JSON.stringify(job("running"))),
       new Response(JSON.stringify(job("succeeded"))),
-      new Response(JSON.stringify({
-        job: job("succeeded"),
-        document: {
-          schemaVersion: "0.1",
-          source: { inputType: "text", mediaType: "text/plain" },
-          pages: [{
-            pageNumber: 1,
-            blocks: [{
-              id: "text-1",
-              type: "text",
-              order: 0,
-              text: "Revenue increased to $12.4 million.",
-              source: { pageNumber: 1, sectionPath: ["Pasted input"] },
-            }],
-          }],
-          warnings: [],
-        },
-      })),
+      new Response(JSON.stringify(successfulResult)),
     ];
     const fetcher = vi.fn(async () => responses.shift()!);
     const flow = await submitPollAndLoad(createExtractionApi(fetcher as typeof fetch), request, {
@@ -72,10 +53,9 @@ describe("submit → poll → render integration", () => {
   });
 
   it("renders an actionable typed failure and never requests a result", async () => {
-    const failure = { code: "encrypted_file", message: "The PDF is encrypted." };
     const responses = [
       new Response(JSON.stringify(job("queued")), { status: 202 }),
-      new Response(JSON.stringify(job("failed", failure))),
+      new Response(JSON.stringify(failedJob)),
     ];
     const fetcher = vi.fn(async () => responses.shift()!);
     const flow = await submitPollAndLoad(createExtractionApi(fetcher as typeof fetch), request, {

@@ -1,0 +1,79 @@
+{
+  "successful_result": {
+    "job": {
+      "id": "4c4f87b3-5a21-487b-b2d0-080ace475214",
+      "input_mode": "text",
+      "file_name": null,
+      "deck_purpose": "management-review",
+      "slide_count": 8,
+      "status": "succeeded",
+      "created_at": "2026-07-25T06:00:00Z",
+      "updated_at": "2026-07-25T06:00:01Z",
+      "started_at": "2026-07-25T06:00:00Z",
+      "finished_at": "2026-07-25T06:00:01Z",
+      "attempt_count": 1,
+      "max_attempts": 3,
+      "failure": null,
+      "telemetry": {
+        "route": "pasted_text",
+        "duration_ms": 5,
+        "retries": 0,
+        "external_cost_usd": 0
+      }
+    },
+    "document": {
+      "schemaVersion": "0.1",
+      "documentId": "document-integration-001",
+      "source": {
+        "sourceId": "source-integration-001",
+        "inputType": "text",
+        "mediaType": "text/plain",
+        "contentHash": "sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+      },
+      "pages": [
+        {
+          "pageNumber": 1,
+          "width": 612,
+          "height": 792,
+          "coordinateUnit": "pt",
+          "blocks": [
+            {
+              "id": "page-1-text-1",
+              "type": "text",
+              "order": 0,
+              "text": "Revenue increased to $12.4 million.",
+              "source": {
+                "sourceId": "source-integration-001",
+                "pageNumber": 1,
+                "sectionPath": ["Pasted input"]
+              },
+              "confidence": 1,
+              "extraction": { "method": "pasted_text" },
+              "warnings": []
+            }
+          ]
+        }
+      ],
+      "warnings": []
+    }
+  },
+  "failed_job": {
+    "id": "4c4f87b3-5a21-487b-b2d0-080ace475215",
+    "input_mode": "file",
+    "file_name": "encrypted.pdf",
+    "deck_purpose": "management-review",
+    "slide_count": 8,
+    "status": "failed",
+    "created_at": "2026-07-25T06:00:00Z",
+    "updated_at": "2026-07-25T06:00:01Z",
+    "started_at": "2026-07-25T06:00:00Z",
+    "finished_at": "2026-07-25T06:00:01Z",
+    "attempt_count": 1,
+    "max_attempts": 3,
+    "failure": {
+      "code": "encrypted_file",
+      "message": "The PDF is encrypted."
+    },
+    "telemetry": null
+  }
+}
