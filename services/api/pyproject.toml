@@ -10,6 +10,7 @@ dependencies = [
   "fastapi>=0.115",
   "financial-slides-worker",
   "jsonschema>=4.23",
+  "psycopg[binary]>=3.2.9,<4",
   "uvicorn[standard]>=0.32",
 ]
 

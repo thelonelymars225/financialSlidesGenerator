@@ -92,8 +92,10 @@ web -> API -> job queue -> worker
   states. State transitions, idempotency keys, retry decisions, and exponential
   backoff are deterministic.
 - Repository, queue, source-store, and result-store protocols keep infrastructure
-  replaceable. The secretless baseline uses one SQLite adapter so API and worker
-  processes can reopen the same durable state after restart.
+  replaceable. The secretless baseline uses one SQLite adapter. Production uses
+  the same ports through PostgreSQL in the private `financial_slides` schema;
+  worker claims use row locks with `SKIP LOCKED` so concurrent workers cannot
+  process the same job.
 - Source bytes are persisted with the job rather than referenced from a
   developer laptop. A cloud persistent volume can host the baseline database;
   managed queue and object-store adapters can replace it without changing HTTP
@@ -104,3 +106,17 @@ web -> API -> job queue -> worker
 - `X-Owner-ID` scopes status, result, and cancellation access. The development
   default is `local-development`; production authentication remains a separate
   adapter concern.
+
+## Supabase persistence boundary
+
+- The hosted `financial-slides-generator` project in Frankfurt (`eu-central-1`)
+  is the production database and object-storage foundation.
+- Application tables live in the private `financial_slides` schema, have RLS
+  enabled for defense in depth, and are not part of the browser-facing Data API.
+- `source-documents` and `generated-presentations` are private buckets with
+  explicit MIME and size limits. The API mediates access; browser policies and
+  signed URLs wait for the authentication ticket.
+- `DATABASE_URL` selects the PostgreSQL adapter in hosted environments. SQLite
+  remains the default when no production database URL is configured.
+- Secret or service-role credentials are server-only and never use a frontend
+  environment-variable prefix.
