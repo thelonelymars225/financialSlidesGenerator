@@ -25,9 +25,11 @@ performed inside a request.
 Owns long-running stages: extraction, retrieval, analysis, validation, layout,
 preflight, rendering, and bounded repair. Queue technology remains undecided.
 Native extraction currently routes pasted text and signature-verified,
-born-digital PDFs through replaceable local parser adapters. Every route emits
-Extracted Document v0.1 plus separate duration, route, and external-cost
-telemetry. OCR and model-backed fallbacks remain downstream escalation paths.
+born-digital PDFs through replaceable local parser adapters. Scanned and
+low-text PDF pages use bounded local Tesseract OCR with confidence-based review
+warnings. Every route emits Extracted Document v0.1 plus separate duration,
+route, and external-cost telemetry. Model-backed fallbacks remain downstream
+escalation paths.
 
 ### `packages/contracts`
 
@@ -83,6 +85,9 @@ web -> API -> job queue -> worker
 - Local routes report zero external-service cost. Encrypted, corrupt,
   unsupported, oversized, over-page-limit, and timed-out inputs return stable
   typed errors.
+- OCR is English-only until Arabic enters the approved MVP. It is capped
+  separately from the document page limit and flags failed or low-confidence
+  pages instead of silently accepting them.
 
 ## Durable extraction-job boundary
 
