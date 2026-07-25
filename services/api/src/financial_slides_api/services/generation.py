@@ -19,8 +19,8 @@ from financial_slides_api.domain.generation import (
     GenerationStatus,
     transition,
 )
-from financial_slides_api.infrastructure.deterministic_analysis import (
-    DeterministicAnalysisProvider,
+from financial_slides_api.infrastructure.hosted_analysis import (
+    analysis_provider_from_environment,
 )
 from financial_slides_api.infrastructure.node_renderer import (
     NodePresentationRenderer,
@@ -272,6 +272,6 @@ class SlideGenerationService:
 def get_generation_service() -> SlideGenerationService:
     return SlideGenerationService(
         get_job_service(),
-        FinancialAnalysisService(DeterministicAnalysisProvider()),
+        FinancialAnalysisService(analysis_provider_from_environment()),
         NodePresentationRenderer(),
     )

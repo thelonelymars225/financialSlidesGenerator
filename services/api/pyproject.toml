@@ -9,13 +9,15 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",
   "financial-slides-worker",
+  "httpx2>=2.9,<3",
   "jsonschema>=4.23",
   "psycopg[binary]>=3.2.9,<4",
+  "python-dotenv>=1.1,<2",
   "uvicorn[standard]>=0.32",
 ]
 
 [project.optional-dependencies]
-dev = ["httpx2>=2.9,<3", "pytest>=8.3"]
+dev = ["pytest>=8.3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

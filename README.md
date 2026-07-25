@@ -59,6 +59,22 @@ uv run --package financial-slides-api uvicorn financial_slides_api.main:app --re
 pnpm --filter @financial-slides/extraction-benchmark benchmark
 ```
 
+## Optional hosted analysis
+
+Local development and CI use the deterministic analysis provider by default. To
+use an OpenAI-compatible hosted API, copy `.env.example` to `.env` and set:
+
+```dotenv
+MODEL_PROVIDER=openai-compatible
+MODEL_BASE_URL=https://your-provider.example/v1
+MODEL_API_KEY=your-local-secret
+MODEL_NAME=your-model
+```
+
+Keep `.env` local and server-side. The committed example contains no key, and
+tests never make paid calls. Optional per-million-token prices in `.env` enable
+cost telemetry without changing the provider adapter.
+
 Queued extraction runs outside the web request. Process a bounded batch from
 the durable secretless queue with:
 
