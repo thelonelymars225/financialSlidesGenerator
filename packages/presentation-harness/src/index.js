@@ -1,3 +1,12 @@
+import {
+  DEFAULT_PREFLIGHT_POLICY,
+  analyzeMeasurements,
+  createRepairPlan,
+  deriveFitOverrides,
+  measureBrowserPage,
+  preflightBrowserDeck,
+} from "./preflight.js";
+
 const CANVAS = Object.freeze({ width: 1280, height: 720 });
 const TYPOGRAPHY = Object.freeze({
   fontFamily: "Aptos, Arial, sans-serif",
@@ -137,8 +146,24 @@ function renderChart(component) {
   return `<table class="chart-data" data-chart-type="${component.chartType}"><caption>Editable chart data</caption><thead><tr><th>Series</th>${headings}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function renderComponent(component, region, assets) {
-  const attributes = `class="component ${component.type}" data-component-id="${escapeHtml(component.id)}"${sourceAttribute(component)} style="${regionStyle(region)}"`;
+function fitStyle(fit = {}) {
+  const declarations = [];
+  for (const [property, unit] of [
+    ["fontSize", "px"],
+    ["lineHeight", ""],
+    ["padding", "px"],
+  ]) {
+    if (fit[property] === undefined) continue;
+    if (!Number.isFinite(fit[property]) || fit[property] < 0) {
+      throw new Error(`Invalid ${property} fit override`);
+    }
+    declarations.push(`${property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}:${fit[property]}${unit}`);
+  }
+  return declarations.length ? `;${declarations.join(";")}` : "";
+}
+
+function renderComponent(component, region, assets, fitOverrides) {
+  const attributes = `class="component ${component.type}" data-component-id="${escapeHtml(component.id)}" data-region="${escapeHtml(component.region)}"${sourceAttribute(component)} style="${regionStyle(region)}${fitStyle(fitOverrides[component.id])}"`;
   if (component.type === "text") {
     return `<div ${attributes.replace(`component ${component.type}`, `component text text-${component.variant}`)}>${escapeHtml(component.text)}</div>`;
   }
@@ -156,7 +181,7 @@ function renderComponent(component, region, assets) {
   throw new Error(`Unsupported component type: ${component.type}`);
 }
 
-function renderSlide(slide, assets) {
+function renderSlide(slide, assets, fitOverrides) {
   const approved = layoutRegistry[slide.layoutId];
   if (!approved) throw new Error(`Unknown layout: ${slide.layoutId}`);
   const components = slide.components.map((component) => {
@@ -165,22 +190,44 @@ function renderSlide(slide, assets) {
     }
     const region = approved.regions[component.region];
     if (!region) throw new Error(`Layout ${slide.layoutId} does not define region ${component.region}`);
-    return renderComponent(component, region, assets);
+    return renderComponent(component, region, assets, fitOverrides);
   });
   return `<section class="slide layout-${slide.layoutId}" data-slide-id="${escapeHtml(slide.id)}"><h1 class="slide-title">${escapeHtml(slide.title)}</h1>${components.join("")}</section>`;
 }
 
-export function compileDeckHtml(deckSpec, { assets = {} } = {}) {
+export function compileDeckHtml(deckSpec, { assets = {}, fitOverrides = {} } = {}) {
   if (deckSpec?.schemaVersion !== "0.1" || !Array.isArray(deckSpec.slides)) {
     throw new Error("Slide specification v0.1 is required");
   }
   assertSafe(deckSpec, "Slide specification");
   const slides = [...deckSpec.slides]
     .sort((left, right) => left.order - right.order)
-    .map((slide) => renderSlide(slide, assets))
+    .map((slide) => renderSlide(slide, assets, fitOverrides))
     .join("");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(deckSpec.title)}</title><style>${CSS}</style></head><body><main class="deck" data-deck-id="${escapeHtml(deckSpec.deckId)}">${slides}</main></body></html>`;
 }
+
+export async function runBrowserPreflight(
+  deckSpec,
+  { page, assets = {}, policy = {}, repairAttempt = 0 } = {},
+) {
+  return preflightBrowserDeck({
+    page,
+    deckSpec,
+    policy,
+    repairAttempt,
+    layoutRegistry,
+    compile: (fitOverrides) => compileDeckHtml(deckSpec, { assets, fitOverrides }),
+  });
+}
+
+export {
+  DEFAULT_PREFLIGHT_POLICY,
+  analyzeMeasurements,
+  createRepairPlan,
+  deriveFitOverrides,
+  measureBrowserPage,
+};
 
 export function createPreflightReport(slideCount) {
   if (!Number.isInteger(slideCount) || slideCount < 0) {
