@@ -1,0 +1,11 @@
+{
+  "fixtureVersion": "0.1",
+  "kind": "financial_table",
+  "mediaType": "application/pdf",
+  "synthetic": true,
+  "rows": [
+    ["Period", "Revenue (USD millions)"],
+    ["Q2 2026", "$12.4"]
+  ],
+  "description": "Safe born-digital quarterly revenue table with row and column provenance."
+}

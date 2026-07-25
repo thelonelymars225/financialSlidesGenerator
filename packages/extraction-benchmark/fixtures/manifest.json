@@ -1,0 +1,147 @@
+{
+  "schemaVersion": "0.1",
+  "thresholds": {
+    "textAccuracy": 0.98,
+    "tableCellAccuracy": 1,
+    "numericFidelity": 1,
+    "readingOrderAccuracy": 1,
+    "sourceLocationAccuracy": 1,
+    "maxLatencyMs": 2500,
+    "maxEstimatedCostUsd": 0
+  },
+  "cases": [
+    {
+      "id": "born-digital-text",
+      "kind": "born_digital_text",
+      "source": "sources/born-digital-text.json",
+      "expectedOutput": "../../contracts/examples/extracted-document-text-v0.1.json",
+      "deterministicOutput": "../../contracts/examples/extracted-document-text-v0.1.json",
+      "route": "pasted_text",
+      "deterministicDurationMs": 5,
+      "criticalValues": [
+        {
+          "id": "exact-revenue",
+          "displayedValue": "$12.4 million",
+          "value": 12400000,
+          "currency": "USD",
+          "period": "Q2 2026"
+        },
+        {
+          "id": "period-q2-2026",
+          "displayedValue": "$12.4 million",
+          "value": 12400000,
+          "period": "Q2 2026"
+        }
+      ]
+    },
+    {
+      "id": "financial-table",
+      "kind": "financial_table",
+      "source": "sources/financial-table.json",
+      "expectedOutput": "../../contracts/examples/extracted-document-table-v0.1.json",
+      "deterministicOutput": "../../contracts/examples/extracted-document-table-v0.1.json",
+      "route": "native_pdf",
+      "deterministicDurationMs": 180,
+      "criticalValues": [
+        {
+          "id": "table-currency-scale",
+          "displayedValue": "$12.4",
+          "value": 12400000,
+          "currency": "USD",
+          "period": "Q2 2026"
+        }
+      ]
+    },
+    {
+      "id": "financial-table-document-api",
+      "kind": "financial_table",
+      "source": "sources/financial-table.json",
+      "expectedOutput": "../../contracts/examples/extracted-document-table-v0.1.json",
+      "deterministicOutput": "../../contracts/examples/extracted-document-table-v0.1.json",
+      "route": "recorded_document_api",
+      "deterministicDurationMs": 760,
+      "criticalValues": [
+        {
+          "id": "document-api-table-value",
+          "displayedValue": "$12.4",
+          "value": 12400000,
+          "currency": "USD",
+          "period": "Q2 2026"
+        }
+      ]
+    },
+    {
+      "id": "scanned-page",
+      "kind": "scanned_page",
+      "source": "sources/scanned-page.json",
+      "expectedOutput": "../../contracts/examples/extracted-document-scan-v0.1.json",
+      "deterministicOutput": "../../contracts/examples/extracted-document-scan-v0.1.json",
+      "route": "recorded_local_ocr",
+      "deterministicDurationMs": 1100,
+      "criticalValues": [
+        {
+          "id": "ocr-currency-unit",
+          "displayedValue": "3,800,000 SAR",
+          "value": 3800000,
+          "currency": "SAR"
+        }
+      ]
+    },
+    {
+      "id": "mixed-pdf",
+      "kind": "mixed_pdf",
+      "source": "sources/mixed-pdf.json",
+      "expectedOutput": "expected/extracted-document-mixed-v0.1.json",
+      "deterministicOutput": "expected/extracted-document-mixed-v0.1.json",
+      "route": "recorded_native_plus_ocr",
+      "deterministicDurationMs": 1450,
+      "criticalValues": [
+        {
+          "id": "total",
+          "displayedValue": "$12.4 million",
+          "value": 12400000,
+          "currency": "USD",
+          "period": "Q2 2026"
+        },
+        {
+          "id": "negative-percentage",
+          "displayedValue": "-2.5%",
+          "value": -0.025,
+          "unit": "percent",
+          "period": "Q2 2026"
+        },
+        {
+          "id": "reported-unit",
+          "displayedValue": "3.8 million SAR",
+          "value": 3800000,
+          "currency": "SAR"
+        }
+      ]
+    },
+    {
+      "id": "financial-chart",
+      "kind": "chart",
+      "source": "sources/financial-chart.json",
+      "expectedOutput": "../../contracts/examples/extracted-document-chart-v0.1.json",
+      "deterministicOutput": "../../contracts/examples/extracted-document-chart-v0.1.json",
+      "route": "recorded_selective_vlm",
+      "deterministicDurationMs": 2100,
+      "criticalValues": [
+        {
+          "id": "chart-start-period",
+          "displayedValue": "$10.9m",
+          "value": 10900000,
+          "currency": "USD",
+          "period": "Q2 2025"
+        },
+        {
+          "id": "chart-end-period",
+          "displayedValue": "$12.4m",
+          "value": 12400000,
+          "currency": "USD",
+          "period": "Q2 2026"
+        }
+      ]
+    }
+  ]
+}

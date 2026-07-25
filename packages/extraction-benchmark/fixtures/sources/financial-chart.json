@@ -1,0 +1,11 @@
+{
+  "fixtureVersion": "0.1",
+  "kind": "chart",
+  "mediaType": "application/pdf",
+  "synthetic": true,
+  "series": [
+    { "period": "Q2 2025", "displayedValue": "$10.9m", "value": 10900000 },
+    { "period": "Q2 2026", "displayedValue": "$12.4m", "value": 12400000 }
+  ],
+  "description": "Safe revenue-trend chart with two exact values and reporting periods."
+}

@@ -18,10 +18,9 @@ services/
   worker/                      Long-running generation jobs
 packages/
   contracts/                   Language-neutral JSON contracts
+  extraction-benchmark/        Safe extraction quality and cost regression suite
   presentation-harness/       Layout selection, fitting, and preflight
   presentation-renderer/      Replaceable PowerPoint renderer adapter
-fixtures/
-  golden/                      Safe evaluation reports and expected results
 docs/                          BRD, architecture, and decision records
 ```
 
@@ -56,6 +55,7 @@ Individual workspaces can also be run directly:
 ```bash
 pnpm --filter @financial-slides/web dev
 uv run --package financial-slides-api uvicorn financial_slides_api.main:app --reload
+pnpm --filter @financial-slides/extraction-benchmark benchmark
 ```
 
 Queued extraction runs outside the web request. Process a bounded batch from
