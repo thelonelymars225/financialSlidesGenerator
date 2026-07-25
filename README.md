@@ -32,6 +32,7 @@ See [docs/architecture.md](docs/architecture.md) for why these boundaries exist.
 - pnpm 11 or newer
 - Python 3.12 or newer
 - uv
+- Tesseract 5 with the English language data (`eng`) for local OCR
 
 ## First-time setup
 

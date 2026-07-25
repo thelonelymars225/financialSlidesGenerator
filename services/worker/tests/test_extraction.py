@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from base64 import b64decode
+from io import BytesIO
 import json
 from pathlib import Path
+import shutil
 import subprocess
 
+from PIL import Image, ImageDraw, ImageFont
+import pypdfium2
 import pytest
 
 from financial_slides_worker.extraction import (
@@ -19,6 +23,17 @@ from financial_slides_worker.extraction import (
     MediaTypeMismatchError,
     TextSource,
     UnsupportedFileError,
+)
+from financial_slides_worker.extraction.native import PdfPlumberExtractor, _page_route
+from financial_slides_worker.extraction.ocr import (
+    OcrFailure,
+    OcrPage,
+    OcrTable,
+    OcrTableCell,
+    OcrWord,
+    TesseractOcrEngine,
+    page_quality,
+    parse_tesseract_tsv,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -52,6 +67,64 @@ if (!result.valid) {
         capture_output=True,
         text=True,
     )
+
+
+def scanned_pdf(text: str, *, size: tuple[int, int] = (600, 800), rotation: int = 0) -> bytes:
+    image = Image.new("RGB", size, "white")
+    font_size = max(12, min(size) // 12)
+    font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+    ImageDraw.Draw(image).text(
+        (max(5, font_size), max(5, font_size * 2)), text, fill="black", font=font
+    )
+    if rotation:
+        image = image.rotate(rotation, expand=True)
+    output = BytesIO()
+    image.save(output, format="PDF", resolution=144)
+    return output.getvalue()
+
+
+def mixed_pdf(native: bytes, scan: bytes) -> bytes:
+    destination = pypdfium2.PdfDocument.new()
+    sources = [pypdfium2.PdfDocument(native), pypdfium2.PdfDocument(scan)]
+    for source in sources:
+        destination.import_pages(source)
+    output = BytesIO()
+    destination.save(output)
+    return output.getvalue()
+
+
+def ocr_page(
+    *,
+    confidence: float = 0.94,
+    text: str = "Operating expenses were $12.4m",
+    width: int = 1200,
+    height: int = 1600,
+) -> OcrPage:
+    words = tuple(
+        OcrWord(
+            token,
+            (40 + index * 130, 100, 140 + index * 130, 140),
+            confidence,
+            (1, 1, 1),
+        )
+        for index, token in enumerate(text.split())
+    )
+    return OcrPage(words, width, height, "en")
+
+
+class FakeOcrEngine:
+    provider = "fixture-ocr"
+
+    def __init__(self, outputs: list[OcrPage | Exception]) -> None:
+        self.outputs = iter(outputs)
+        self.calls = 0
+
+    def extract(self, page: object, context: object) -> OcrPage:
+        self.calls += 1
+        output = next(self.outputs)
+        if isinstance(output, Exception):
+            raise output
+        return output
 
 
 def test_pasted_text_emits_canonical_contract_with_zero_external_cost(
@@ -177,3 +250,162 @@ def test_replaceable_parser_still_obeys_timeout_boundary() -> None:
     with pytest.raises(ExtractionTimeoutError) as raised:
         service.extract_file(FileSource(data=b"%PDF-1.7\nfixture", file_name="report.pdf"))
     assert raised.value.code == "extraction_timeout"
+
+
+def test_page_router_distinguishes_native_scanned_and_mixed_content() -> None:
+    native = [
+        {
+            "type": "text",
+            "text": "Quarterly revenue increased and operating margin improved materially.",
+            "source": {"boundingBox": {"left": 10, "top": 10, "right": 300, "bottom": 80}},
+        }
+    ]
+    mixed = [
+        {
+            "type": "text",
+            "text": "Page 2",
+            "source": {"boundingBox": {"left": 10, "top": 10, "right": 50, "bottom": 20}},
+        }
+    ]
+
+    assert _page_route(native, 612 * 792) == "born_digital"
+    assert _page_route([], 612 * 792) == "scanned"
+    assert _page_route(mixed, 612 * 792) == "mixed"
+
+
+def test_clean_scan_uses_local_ocr_with_provenance_and_table_structure(
+    tmp_path: Path,
+) -> None:
+    table = OcrTable(
+        cells=(
+            OcrTableCell(0, 0, "Metric", (40, 220, 200, 260), 0.96),
+            OcrTableCell(0, 1, "Value", (220, 220, 380, 260), 0.95),
+            OcrTableCell(1, 0, "Revenue", (40, 270, 200, 310), 0.94),
+            OcrTableCell(1, 1, "$12.4m", (220, 270, 380, 310), 0.93),
+        ),
+        box=(40, 220, 380, 310),
+        row_count=2,
+        column_count=2,
+        confidence=0.94,
+    )
+    output = ocr_page()
+    output = OcrPage(output.words, output.width_px, output.height_px, "en", (table,))
+    engine = FakeOcrEngine([output])
+    service = ExtractionService(extractors=(PdfPlumberExtractor(engine),))
+
+    result = service.extract_file(
+        FileSource(data=scanned_pdf("Operating expenses were $12.4m"), file_name="scan.pdf")
+    )
+
+    blocks = result.document["pages"][0]["blocks"]
+    assert engine.calls == 1
+    assert blocks[0]["extraction"] == {
+        "method": "ocr",
+        "provider": "fixture-ocr",
+        "model": "en",
+    }
+    assert [block["order"] for block in blocks] == list(range(len(blocks)))
+    assert blocks[-1]["type"] == "table"
+    assert blocks[-1]["cells"][-1]["text"] == "$12.4m"
+    assert blocks[-1]["source"]["boundingBox"]["unit"] == "pt"
+    assert any(warning["code"] == "page.route.scanned" for warning in result.document["warnings"])
+    validate_contract(result.document, tmp_path)
+
+
+def test_rotated_and_low_resolution_scans_remain_bounded_and_flag_low_quality(
+    tmp_path: Path,
+) -> None:
+    low_quality = ocr_page(
+        confidence=0.1,
+        text="R��v��nu�� 12..4",
+        width=160,
+        height=120,
+    )
+    engine = FakeOcrEngine([low_quality])
+    service = ExtractionService(extractors=(PdfPlumberExtractor(engine),))
+
+    result = service.extract_file(
+        FileSource(
+            data=scanned_pdf("Revenue 12.4", size=(160, 120), rotation=90),
+            file_name="rotated-low-resolution.pdf",
+        )
+    )
+
+    block = result.document["pages"][0]["blocks"][0]
+    box = block["source"]["boundingBox"]
+    assert 0 <= box["left"] < box["right"] <= result.document["pages"][0]["width"]
+    assert 0 <= box["top"] < box["bottom"] <= result.document["pages"][0]["height"]
+    assert block["warnings"][0]["code"] == "ocr.low_confidence"
+    assert any(warning["code"] == "ocr.low_confidence" for warning in result.document["warnings"])
+    validate_contract(result.document, tmp_path)
+
+
+def test_mixed_pdf_routes_only_scanned_page_to_ocr(tmp_path: Path) -> None:
+    engine = FakeOcrEngine([ocr_page()])
+    service = ExtractionService(extractors=(PdfPlumberExtractor(engine),))
+    source = mixed_pdf(
+        fixture_bytes("native-financial-report.pdf.b64"),
+        scanned_pdf("Operating expenses were $12.4m"),
+    )
+
+    result = service.extract_file(FileSource(data=source, file_name="mixed.pdf"))
+
+    assert engine.calls == 1
+    assert result.document["pages"][0]["blocks"][0]["extraction"]["method"] == "native_pdf"
+    assert result.document["pages"][1]["blocks"][0]["extraction"]["method"] == "ocr"
+    assert any(warning["code"] == "document.route.mixed" for warning in result.document["warnings"])
+    validate_contract(result.document, tmp_path)
+
+
+def test_ocr_failure_and_ocr_page_limit_are_flagged_without_unbounded_work() -> None:
+    scan = scanned_pdf("Operating expenses were $12.4m")
+    failed_engine = FakeOcrEngine([OcrFailure("fixture failure")])
+    failed = ExtractionService(extractors=(PdfPlumberExtractor(failed_engine),)).extract_file(
+        FileSource(data=scan, file_name="failed.pdf")
+    )
+    limited_engine = FakeOcrEngine([ocr_page()])
+    limited = ExtractionService(
+        extractors=(PdfPlumberExtractor(limited_engine),),
+        limits=ExtractionLimits(max_ocr_pages=0),
+    ).extract_file(FileSource(data=scan, file_name="limited.pdf"))
+
+    assert failed_engine.calls == 1
+    assert any(warning["code"] == "ocr.failed" for warning in failed.document["warnings"])
+    assert any(
+        warning["code"] == "page.no_extractable_content" for warning in failed.document["warnings"]
+    )
+    assert limited_engine.calls == 0
+    assert any(
+        warning["code"] == "ocr.page_limit_exceeded" for warning in limited.document["warnings"]
+    )
+
+
+def test_tesseract_tsv_parser_and_quality_signals() -> None:
+    tsv = (
+        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth"
+        "\theight\tconf\ttext\n"
+        "5\t1\t1\t1\t1\t1\t10\t20\t50\t15\t96.0\tRevenue\n"
+        "5\t1\t1\t1\t1\t2\t70\t20\t45\t15\t92.0\t$12.4m\n"
+        "5\t1\t1\t1\t2\t1\t10\t45\t30\t15\tbad\tignored\n"
+    )
+
+    page = parse_tesseract_tsv(tsv, 200, 100)
+    quality = page_quality(page)
+
+    assert [word.text for word in page.words] == ["Revenue", "$12.4m"]
+    assert quality.ocr_confidence == 0.94
+    assert quality.text_coverage > 0
+    assert quality.suspicious_character_ratio == 0
+    assert quality.numeric_consistency == 1
+
+
+@pytest.mark.skipif(shutil.which("tesseract") is None, reason="local Tesseract is unavailable")
+def test_local_tesseract_adapter_reads_synthetic_scan() -> None:
+    data = scanned_pdf("Revenue 12.4 million")
+    service = ExtractionService(extractors=(PdfPlumberExtractor(TesseractOcrEngine()),))
+
+    result = service.extract_file(FileSource(data=data, file_name="tesseract-scan.pdf"))
+
+    assert any(
+        "Revenue" in block.get("text", "") for block in result.document["pages"][0]["blocks"]
+    )
