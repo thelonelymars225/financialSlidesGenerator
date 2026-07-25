@@ -71,6 +71,14 @@ MODEL_API_KEY=your-local-secret
 MODEL_NAME=your-model
 ```
 
+For DeepSeek, only the provider and key are required; the adapter defaults to
+`deepseek-v4-flash` at `https://api.deepseek.com`:
+
+```dotenv
+MODEL_PROVIDER=deepseek
+MODEL_API_KEY=your-local-secret
+```
+
 Keep `.env` local and server-side. The committed example contains no key, and
 tests never make paid calls. Optional per-million-token prices in `.env` enable
 cost telemetry without changing the provider adapter.

@@ -5,6 +5,7 @@ import httpx2
 import pytest
 
 from financial_slides_api.infrastructure.hosted_analysis import (
+    DeepSeekAnalysisProvider,
     HostedAnalysisConfig,
     OpenAICompatibleAnalysisProvider,
     analysis_provider_from_environment,
@@ -42,6 +43,31 @@ def test_deterministic_is_the_secretless_default() -> None:
     provider = analysis_provider_from_environment({})
 
     assert provider.name == "deterministic"
+
+
+def test_deepseek_uses_safe_current_defaults_and_json_mode() -> None:
+    requests = []
+    output = valid_analysis()
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json=response(output))
+
+    provider = analysis_provider_from_environment(
+        {"MODEL_PROVIDER": "deepseek", "MODEL_API_KEY": "test-secret"},
+        transport=httpx2.MockTransport(handler),
+    )
+    result = asyncio.run(FinancialAnalysisService(provider).analyze(source_document()))
+
+    sent = json.loads(requests[0].content)
+    assert isinstance(provider, DeepSeekAnalysisProvider)
+    assert requests[0].url == "https://api.deepseek.com/chat/completions"
+    assert sent["model"] == "deepseek-v4-flash"
+    assert sent["response_format"] == {"type": "json_object"}
+    assert sent["thinking"] == {"type": "disabled"}
+    assert "max_tokens" in sent
+    assert "max_completion_tokens" not in sent
+    assert result.telemetry.provider == "deepseek"
 
 
 def test_hosted_provider_requires_complete_server_configuration() -> None:

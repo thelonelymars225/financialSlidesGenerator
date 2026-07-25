@@ -124,12 +124,12 @@ class OpenAICompatibleAnalysisProvider:
             ).read_text(encoding="utf-8")
         )
 
-    async def analyze(
+    def _request_payload(
         self,
         request: AnalysisRequest,
         validation_feedback: Sequence[str],
-    ) -> ProviderAnalysis:
-        payload = {
+    ) -> dict:
+        return {
             "model": self.model,
             "messages": [
                 {
@@ -158,6 +158,13 @@ class OpenAICompatibleAnalysisProvider:
             },
             "max_completion_tokens": self._config.max_output_tokens,
         }
+
+    async def analyze(
+        self,
+        request: AnalysisRequest,
+        validation_feedback: Sequence[str],
+    ) -> ProviderAnalysis:
+        payload = self._request_payload(request, validation_feedback)
         try:
             async with httpx2.AsyncClient(
                 timeout=self._config.timeout_seconds,
@@ -196,6 +203,41 @@ class OpenAICompatibleAnalysisProvider:
         )
 
 
+class DeepSeekAnalysisProvider(OpenAICompatibleAnalysisProvider):
+    """DeepSeek adapter using its supported JSON-output request shape."""
+
+    name = "deepseek"
+
+    def _request_payload(
+        self,
+        request: AnalysisRequest,
+        validation_feedback: Sequence[str],
+    ) -> dict:
+        source = _source_payload(request, validation_feedback)
+        return {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Return only valid JSON matching the provided JSON Schema. Every metric "
+                        "and finding must use evidence from the supplied document blocks. Preserve "
+                        "source values, units, periods, page numbers, and block IDs exactly. The "
+                        "validationFeedback array contains mandatory corrections.\nJSON Schema:\n"
+                        + json.dumps(self._schema, separators=(",", ":"))
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(source, separators=(",", ":")),
+                },
+            ],
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "disabled"},
+            "max_tokens": self._config.max_output_tokens,
+        }
+
+
 def analysis_provider_from_environment(
     environment: Mapping[str, str] = os.environ,
     *,
@@ -207,6 +249,14 @@ def analysis_provider_from_environment(
     if provider == "openai-compatible":
         return OpenAICompatibleAnalysisProvider(
             hosted_config(environment),
+            transport=transport,
+        )
+    if provider == "deepseek":
+        deepseek_environment = dict(environment)
+        deepseek_environment.setdefault("MODEL_BASE_URL", "https://api.deepseek.com")
+        deepseek_environment.setdefault("MODEL_NAME", "deepseek-v4-flash")
+        return DeepSeekAnalysisProvider(
+            hosted_config(deepseek_environment),
             transport=transport,
         )
     raise RuntimeError(f"unsupported MODEL_PROVIDER: {provider}")
