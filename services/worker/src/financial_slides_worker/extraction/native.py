@@ -18,6 +18,11 @@ from financial_slides_worker.extraction.errors import (
     ExtractionError,
     ExtractionLimitError,
 )
+from financial_slides_worker.extraction.fallback import (
+    FallbackReason,
+    PageFallbackCandidate,
+    SelectivePageFallback,
+)
 from financial_slides_worker.extraction.models import (
     CanonicalDocument,
     ExtractionContext,
@@ -247,6 +252,35 @@ def _page_route(blocks: list[dict[str, Any]], page_area: float) -> str:
     return "born_digital"
 
 
+def _significant_visual(page: Any) -> bool:
+    page_area = max(1.0, float(page.width) * float(page.height))
+    for image in page.images:
+        width = abs(float(image.get("x1", 0)) - float(image.get("x0", 0)))
+        height = abs(float(image.get("bottom", 0)) - float(image.get("top", 0)))
+        if width * height / page_area >= 0.1:
+            return True
+    return False
+
+
+def _ambiguous_layout(blocks: list[dict[str, Any]]) -> bool:
+    for block in blocks:
+        if block["type"] != "table":
+            continue
+        cells = block.get("cells", ())
+        if (
+            cells
+            and sum(not str(cell.get("text", "")).strip() for cell in cells) / len(cells) >= 0.25
+        ):
+            return True
+    return False
+
+
+def _page_png(page: Any) -> bytes:
+    output = BytesIO()
+    page.to_image(resolution=144, antialias=True).original.save(output, format="PNG")
+    return output.getvalue()
+
+
 def _scale_box(
     box: BoundingBox,
     ocr_page: OcrPage,
@@ -356,8 +390,13 @@ class PdfPlumberExtractor:
     media_type = "application/pdf"
     route = "native_pdf"
 
-    def __init__(self, ocr_engine: OcrEngine | None = None) -> None:
+    def __init__(
+        self,
+        ocr_engine: OcrEngine | None = None,
+        fallback: SelectivePageFallback | None = None,
+    ) -> None:
         self._ocr_engine = ocr_engine or TesseractOcrEngine()
+        self._fallback = fallback
 
     def extract(
         self,
@@ -367,6 +406,7 @@ class PdfPlumberExtractor:
         context.ensure_time_remaining()
         document_id, source_id, content_hash = _identity(source.data)
         warnings: list[dict[str, str]] = []
+        fallback_candidates: list[PageFallbackCandidate] = []
 
         try:
             with pdfplumber.open(BytesIO(source.data)) as pdf:
@@ -391,6 +431,7 @@ class PdfPlumberExtractor:
                         float(page.width) * float(page.height),
                     )
                     page_routes.add(page_route)
+                    fallback_reason: FallbackReason | None = None
                     if page_route != "born_digital":
                         if ocr_pages >= context.limits.max_ocr_pages:
                             warnings.append(
@@ -438,7 +479,10 @@ class PdfPlumberExtractor:
                                             ),
                                         }
                                     )
+                                if quality_score < 0.85:
+                                    fallback_reason = FallbackReason.OCR_LOW_CONFIDENCE
                             except OcrFailure:
+                                fallback_reason = FallbackReason.OCR_FAILED
                                 warnings.append(
                                     {
                                         "code": "ocr.failed",
@@ -449,6 +493,34 @@ class PdfPlumberExtractor:
                                         ),
                                     }
                                 )
+                    if fallback_reason is None and _ambiguous_layout(blocks):
+                        fallback_reason = FallbackReason.AMBIGUOUS_LAYOUT
+                    if (
+                        fallback_reason is None
+                        and page_route == "born_digital"
+                        and _significant_visual(page)
+                    ):
+                        fallback_reason = FallbackReason.COMPLEX_VISUAL
+                    if self._fallback and fallback_reason:
+                        try:
+                            fallback_candidates.append(
+                                PageFallbackCandidate(
+                                    page_number,
+                                    fallback_reason,
+                                    _page_png(page),
+                                )
+                            )
+                        except Exception:
+                            warnings.append(
+                                {
+                                    "code": "fallback.page_render_failed",
+                                    "severity": "warning",
+                                    "message": (
+                                        f"Page {page_number} could not be prepared for "
+                                        "provider fallback."
+                                    ),
+                                }
+                            )
                     if not blocks:
                         warnings.append(
                             {
@@ -488,7 +560,7 @@ class PdfPlumberExtractor:
             raise CorruptFileError() from exc
 
         context.ensure_time_remaining()
-        return {
+        document: CanonicalDocument = {
             "schemaVersion": "0.1",
             "documentId": document_id,
             "source": {
@@ -501,3 +573,6 @@ class PdfPlumberExtractor:
             "pages": pages,
             "warnings": warnings,
         }
+        if self._fallback and fallback_candidates:
+            document = self._fallback.apply(document, fallback_candidates, context)
+        return document
