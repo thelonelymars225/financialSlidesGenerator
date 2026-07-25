@@ -23,6 +23,13 @@ from financial_slides_worker.extraction.models import (
     ExtractionContext,
     FileSource,
 )
+from financial_slides_worker.extraction.ocr import (
+    OcrEngine,
+    OcrFailure,
+    OcrPage,
+    TesseractOcrEngine,
+    page_quality,
+)
 
 BoundingBox = tuple[float, float, float, float]
 
@@ -214,9 +221,143 @@ def _page_blocks(page: Any, source_id: str, page_number: int) -> list[dict[str, 
     return blocks
 
 
+def _block_text(block: dict[str, Any]) -> str:
+    if block["type"] == "text":
+        return str(block["text"])
+    if block["type"] == "table":
+        return " ".join(str(cell["text"]) for cell in block["cells"])
+    return ""
+
+
+def _page_route(blocks: list[dict[str, Any]], page_area: float) -> str:
+    useful_characters = sum(
+        character.isalnum() for block in blocks for character in _block_text(block)
+    )
+    covered_area = 0.0
+    for block in blocks:
+        box = block["source"].get("boundingBox")
+        if box:
+            covered_area += max(0.0, box["right"] - box["left"]) * max(
+                0.0, box["bottom"] - box["top"]
+            )
+    if useful_characters == 0:
+        return "scanned"
+    if useful_characters < 40 or covered_area / max(1.0, page_area) < 0.01:
+        return "mixed"
+    return "born_digital"
+
+
+def _scale_box(
+    box: BoundingBox,
+    ocr_page: OcrPage,
+    page_width: float,
+    page_height: float,
+) -> BoundingBox:
+    scale_x = page_width / max(1, ocr_page.width_px)
+    scale_y = page_height / max(1, ocr_page.height_px)
+    left, top, right, bottom = box
+    return (
+        max(0.0, min(page_width, left * scale_x)),
+        max(0.0, min(page_height, top * scale_y)),
+        max(0.0, min(page_width, right * scale_x)),
+        max(0.0, min(page_height, bottom * scale_y)),
+    )
+
+
+def _ocr_blocks(
+    ocr_page: OcrPage,
+    source_id: str,
+    page_number: int,
+    page_width: float,
+    page_height: float,
+    provider: str,
+) -> tuple[list[dict[str, Any]], float]:
+    quality = page_quality(ocr_page)
+    warning = {
+        "code": "ocr.low_confidence",
+        "severity": "warning",
+        "message": f"Page {page_number} OCR quality score is {quality.score:.2f}; review required.",
+    }
+    block_warnings = [warning] if quality.score < 0.65 else []
+    ordered_items: list[tuple[float, float, dict[str, Any]]] = []
+
+    lines: dict[tuple[int, int, int], list[Any]] = {}
+    for word in ocr_page.words:
+        lines.setdefault(word.line, []).append(word)
+    for index, words in enumerate(lines.values(), start=1):
+        ordered = sorted(words, key=lambda word: word.box[0])
+        box = (
+            min(word.box[0] for word in ordered),
+            min(word.box[1] for word in ordered),
+            max(word.box[2] for word in ordered),
+            max(word.box[3] for word in ordered),
+        )
+        scaled_box = _scale_box(box, ocr_page, page_width, page_height)
+        block = {
+            "id": f"page-{page_number}-ocr-text-{index}",
+            "type": "text",
+            "order": 0,
+            "text": " ".join(word.text for word in ordered),
+            "source": _source_location(source_id, page_number, scaled_box),
+            "confidence": round(sum(word.confidence for word in ordered) / len(ordered), 4),
+            "extraction": {
+                "method": "ocr",
+                "provider": provider,
+                "model": ocr_page.language,
+            },
+            "warnings": block_warnings,
+        }
+        ordered_items.append((scaled_box[1], scaled_box[0], block))
+
+    for index, table in enumerate(ocr_page.tables, start=1):
+        cells = [
+            {
+                "row": cell.row,
+                "column": cell.column,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "text": cell.text,
+                "confidence": cell.confidence,
+                "source": _source_location(
+                    source_id,
+                    page_number,
+                    _scale_box(cell.box, ocr_page, page_width, page_height),
+                ),
+            }
+            for cell in table.cells
+        ]
+        scaled_box = _scale_box(table.box, ocr_page, page_width, page_height)
+        block = {
+            "id": f"page-{page_number}-ocr-table-{index}",
+            "type": "table",
+            "order": 0,
+            "rowCount": table.row_count,
+            "columnCount": table.column_count,
+            "cells": cells,
+            "source": _source_location(source_id, page_number, scaled_box),
+            "confidence": table.confidence,
+            "extraction": {
+                "method": "ocr",
+                "provider": provider,
+                "model": ocr_page.language,
+            },
+            "warnings": block_warnings,
+        }
+        ordered_items.append((scaled_box[1], scaled_box[0], block))
+
+    ordered_items.sort(key=lambda item: (item[0], item[1]))
+    blocks = [item[2] for item in ordered_items]
+    for order, block in enumerate(blocks):
+        block["order"] = order
+    return blocks, quality.score
+
+
 class PdfPlumberExtractor:
     media_type = "application/pdf"
     route = "native_pdf"
+
+    def __init__(self, ocr_engine: OcrEngine | None = None) -> None:
+        self._ocr_engine = ocr_engine or TesseractOcrEngine()
 
     def extract(
         self,
@@ -240,17 +381,81 @@ class PdfPlumberExtractor:
                     )
 
                 pages = []
+                ocr_pages = 0
+                page_routes: set[str] = set()
                 for page_number, page in enumerate(pdf.pages, start=1):
                     context.ensure_time_remaining()
                     blocks = _page_blocks(page, source_id, page_number)
+                    page_route = _page_route(
+                        blocks,
+                        float(page.width) * float(page.height),
+                    )
+                    page_routes.add(page_route)
+                    if page_route != "born_digital":
+                        if ocr_pages >= context.limits.max_ocr_pages:
+                            warnings.append(
+                                {
+                                    "code": "ocr.page_limit_exceeded",
+                                    "severity": "error",
+                                    "message": (
+                                        f"Page {page_number} requires OCR but the "
+                                        f"{context.limits.max_ocr_pages}-page OCR limit was reached."
+                                    ),
+                                }
+                            )
+                        else:
+                            ocr_pages += 1
+                            try:
+                                ocr_page = self._ocr_engine.extract(page, context)
+                                ocr_blocks, quality_score = _ocr_blocks(
+                                    ocr_page,
+                                    source_id,
+                                    page_number,
+                                    float(page.width),
+                                    float(page.height),
+                                    self._ocr_engine.provider,
+                                )
+                                if ocr_blocks:
+                                    blocks = ocr_blocks
+                                warnings.append(
+                                    {
+                                        "code": f"page.route.{page_route}",
+                                        "severity": "info",
+                                        "message": (
+                                            f"Page {page_number} used local OCR after "
+                                            f"{page_route} detection."
+                                        ),
+                                    }
+                                )
+                                if quality_score < 0.65:
+                                    warnings.append(
+                                        {
+                                            "code": "ocr.low_confidence",
+                                            "severity": "warning",
+                                            "message": (
+                                                f"Page {page_number} OCR quality score is "
+                                                f"{quality_score:.2f}; review required."
+                                            ),
+                                        }
+                                    )
+                            except OcrFailure:
+                                warnings.append(
+                                    {
+                                        "code": "ocr.failed",
+                                        "severity": "error",
+                                        "message": (
+                                            f"Local OCR failed for page {page_number}; "
+                                            "manual review is required."
+                                        ),
+                                    }
+                                )
                     if not blocks:
                         warnings.append(
                             {
-                                "code": "page.no_native_content",
-                                "severity": "warning",
+                                "code": "page.no_extractable_content",
+                                "severity": "error",
                                 "message": (
-                                    f"Page {page_number} has no native text or table content; "
-                                    "it may require OCR."
+                                    f"Page {page_number} has no extractable text or table content."
                                 ),
                             }
                         )
@@ -261,6 +466,14 @@ class PdfPlumberExtractor:
                             "height": float(page.height),
                             "coordinateUnit": "pt",
                             "blocks": blocks,
+                        }
+                    )
+                if "born_digital" in page_routes and page_routes.intersection({"scanned", "mixed"}):
+                    warnings.append(
+                        {
+                            "code": "document.route.mixed",
+                            "severity": "info",
+                            "message": "The document combines native and local OCR page routes.",
                         }
                     )
         except PDFPasswordIncorrect as exc:
