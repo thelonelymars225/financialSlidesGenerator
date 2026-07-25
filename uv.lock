@@ -291,14 +291,15 @@ source = { editable = "services/api" }
 dependencies = [
     { name = "fastapi" },
     { name = "financial-slides-worker" },
+    { name = "httpx2" },
     { name = "jsonschema" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "python-dotenv" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
 dev = [
-    { name = "httpx2" },
     { name = "pytest" },
 ]
 
@@ -306,10 +307,11 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "financial-slides-worker", editable = "services/worker" },
-    { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.9,<3" },
+    { name = "httpx2", specifier = ">=2.9,<3" },
     { name = "jsonschema", specifier = ">=4.23" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.9,<4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
+    { name = "python-dotenv", specifier = ">=1.1,<2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 provides-extras = ["dev"]
