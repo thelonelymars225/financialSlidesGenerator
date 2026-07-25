@@ -1,0 +1,171 @@
+import asyncio
+import json
+from copy import deepcopy
+from pathlib import Path
+
+import pytest
+
+from financial_slides_api.domain.analysis import (
+    AnalysisError,
+    AnalysisFailureCode,
+    ProviderAnalysis,
+    ProviderTelemetry,
+)
+from financial_slides_api.infrastructure.deterministic_analysis import (
+    DeterministicAnalysisProvider,
+)
+from financial_slides_api.services.analysis import FinancialAnalysisService
+
+ROOT = Path(__file__).resolve().parents[3]
+EXAMPLE = ROOT / "packages" / "contracts" / "examples" / "extracted-document-text-v0.1.json"
+
+
+def source_document() -> dict:
+    return json.loads(EXAMPLE.read_text(encoding="utf-8"))
+
+
+def valid_analysis() -> dict:
+    return asyncio.run(
+        FinancialAnalysisService(DeterministicAnalysisProvider()).analyze(source_document())
+    ).analysis
+
+
+class ScriptedProvider:
+    def __init__(self, *outputs: dict, delay: float = 0) -> None:
+        self.outputs = outputs
+        self.delay = delay
+        self.calls = 0
+        self.feedback: list[tuple[str, ...]] = []
+
+    async def analyze(self, request, validation_feedback) -> ProviderAnalysis:
+        del request
+        self.feedback.append(tuple(validation_feedback))
+        self.calls += 1
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        output = self.outputs[min(self.calls - 1, len(self.outputs) - 1)]
+        return ProviderAnalysis(
+            output=output,
+            telemetry=ProviderTelemetry(
+                provider="scripted",
+                model="test",
+                input_tokens=10,
+                output_tokens=20,
+                external_cost_usd=0.001,
+            ),
+        )
+
+
+class FailingProvider:
+    async def analyze(self, request, validation_feedback) -> ProviderAnalysis:
+        del request, validation_feedback
+        raise RuntimeError("sensitive provider detail")
+
+
+def run_analysis(service: FinancialAnalysisService, document: dict | None = None, **kwargs):
+    return asyncio.run(service.analyze(document or source_document(), **kwargs))
+
+
+def test_deterministic_provider_returns_grounded_valid_analysis() -> None:
+    result = run_analysis(
+        FinancialAnalysisService(DeterministicAnalysisProvider()),
+    )
+
+    metric = result.analysis["metrics"][0]
+    assert metric["normalizedValue"] == 12_400_000
+    assert metric["unit"] == {"kind": "currency", "code": "USD", "scaleFactor": 1_000_000}
+    assert metric["period"]["label"] == "Q2 2026"
+    assert metric["evidence"][0]["blockId"] == "text-1"
+    assert result.telemetry.provider_calls == 1
+    assert result.telemetry.repair_attempts == 0
+    assert result.telemetry.external_cost_usd == 0
+
+
+def test_invalid_output_receives_one_targeted_repair() -> None:
+    provider = ScriptedProvider({"schemaVersion": "0.2"}, valid_analysis())
+
+    result = run_analysis(FinancialAnalysisService(provider))
+
+    assert provider.calls == 2
+    assert provider.feedback[0] == ()
+    assert provider.feedback[1]
+    assert result.telemetry.repair_attempts == 1
+    assert result.telemetry.input_tokens == 20
+    assert result.telemetry.external_cost_usd == pytest.approx(0.002)
+
+
+def test_repair_exhaustion_is_a_typed_failure() -> None:
+    provider = ScriptedProvider({"schemaVersion": "0.2"})
+
+    with pytest.raises(AnalysisError) as failure:
+        run_analysis(FinancialAnalysisService(provider))
+
+    assert failure.value.code is AnalysisFailureCode.INVALID_OUTPUT
+    assert failure.value.retryable is False
+    assert provider.calls == 2
+
+
+def test_timeout_is_typed_and_retryable() -> None:
+    provider = ScriptedProvider(valid_analysis(), delay=0.05)
+
+    with pytest.raises(AnalysisError) as failure:
+        run_analysis(FinancialAnalysisService(provider, timeout_seconds=0.001))
+
+    assert failure.value.code is AnalysisFailureCode.TIMEOUT
+    assert failure.value.retryable is True
+
+
+def test_provider_failure_is_typed_without_exposing_provider_detail() -> None:
+    with pytest.raises(AnalysisError) as failure:
+        run_analysis(FinancialAnalysisService(FailingProvider()))
+
+    assert failure.value.code is AnalysisFailureCode.PROVIDER_FAILURE
+    assert failure.value.message == "analysis provider failed"
+    assert failure.value.retryable is True
+
+
+def test_cancellation_stops_before_provider_content_is_sent() -> None:
+    provider = ScriptedProvider(valid_analysis())
+
+    with pytest.raises(AnalysisError) as failure:
+        run_analysis(
+            FinancialAnalysisService(provider),
+            is_cancelled=lambda: True,
+        )
+
+    assert failure.value.code is AnalysisFailureCode.CANCELLED
+    assert provider.calls == 0
+
+
+def test_missing_evidence_block_is_an_ungrounded_failure() -> None:
+    analysis = valid_analysis()
+    analysis["metrics"][0]["evidence"][0]["blockId"] = "missing-block"
+    provider = ScriptedProvider(analysis)
+
+    with pytest.raises(AnalysisError) as failure:
+        run_analysis(FinancialAnalysisService(provider, max_repair_attempts=0))
+
+    assert failure.value.code is AnalysisFailureCode.UNGROUNDED_OUTPUT
+
+
+def test_changed_numeric_value_is_an_ungrounded_failure() -> None:
+    analysis = deepcopy(valid_analysis())
+    analysis["metrics"][0]["normalizedValue"] = 9_999
+    provider = ScriptedProvider(analysis)
+
+    with pytest.raises(AnalysisError) as failure:
+        run_analysis(FinancialAnalysisService(provider, max_repair_attempts=0))
+
+    assert failure.value.code is AnalysisFailureCode.UNGROUNDED_OUTPUT
+
+
+def test_invalid_source_is_rejected_before_provider_call() -> None:
+    document = source_document()
+    document["schemaVersion"] = "9.9"
+    provider = ScriptedProvider(valid_analysis())
+
+    with pytest.raises(AnalysisError) as failure:
+        run_analysis(FinancialAnalysisService(provider), document)
+
+    assert failure.value.code is AnalysisFailureCode.INVALID_SOURCE
+    assert provider.calls == 0
