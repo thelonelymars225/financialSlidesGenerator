@@ -7,7 +7,11 @@ const exampleFiles = (await readdir(examplesDirectory)).filter((fileName) => fil
 
 for (const fileName of exampleFiles) {
   const example = JSON.parse(await readFile(new URL(fileName, examplesDirectory), "utf8"));
-  const contractName = fileName.startsWith("analysis-") ? "analysis" : "extractedDocument";
+  const contractName = fileName.startsWith("analysis-")
+    ? "analysis"
+    : fileName.startsWith("slide-spec-")
+      ? "slideSpec"
+      : "extractedDocument";
   const result = await validateContract(contractName, example);
   if (!result.valid) {
     throw new Error(`${fileName} is invalid:\n- ${result.errors.join("\n- ")}`);

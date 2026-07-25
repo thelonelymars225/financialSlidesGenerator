@@ -1,0 +1,420 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://financialslidesgenerator.local/schemas/slide-spec-v0.1.schema.json",
+  "title": "Slide Specification v0.1",
+  "description": "Validated slide intent for deterministic HTML compilation and PowerPoint rendering.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "deckId",
+    "sourceAnalysisId",
+    "sourceDocumentIds",
+    "title",
+    "audience",
+    "themeId",
+    "slides"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "0.1" },
+    "deckId": { "$ref": "#/$defs/id" },
+    "sourceAnalysisId": { "$ref": "#/$defs/id" },
+    "sourceDocumentIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "title": { "$ref": "#/$defs/title" },
+    "subtitle": { "$ref": "#/$defs/title" },
+    "audience": { "$ref": "#/$defs/plainText" },
+    "themeId": { "$ref": "#/$defs/id" },
+    "slides": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 40,
+      "items": { "$ref": "#/$defs/slide" }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]*$",
+      "maxLength": 100
+    },
+    "plainText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "region": {
+      "enum": ["title", "body", "left", "right", "primary", "secondary", "footer", "background"]
+    },
+    "sourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["documentId", "pageNumber", "blockId"],
+      "properties": {
+        "documentId": { "$ref": "#/$defs/id" },
+        "pageNumber": { "type": "integer", "minimum": 1 },
+        "blockId": { "$ref": "#/$defs/id" },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        }
+      }
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "label", "startDate", "endDate"],
+      "properties": {
+        "type": { "enum": ["instant", "month", "quarter", "year", "range"] },
+        "label": { "$ref": "#/$defs/plainText" },
+        "startDate": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "endDate": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        }
+      }
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "code", "scaleFactor"],
+      "properties": {
+        "kind": { "enum": ["currency", "percentage", "count", "ratio"] },
+        "code": { "$ref": "#/$defs/plainText" },
+        "scaleFactor": { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "currency" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "code": { "type": "string", "pattern": "^[A-Z]{3}$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "percentage" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "code": { "const": "%" },
+              "scaleFactor": { "const": 0.01 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "count" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "code": { "const": "count" },
+              "scaleFactor": { "const": 1 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "ratio" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "code": { "const": "ratio" },
+              "scaleFactor": { "const": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "financialValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displayedValue", "value", "normalizedValue", "unit", "period"],
+      "properties": {
+        "displayedValue": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "value": { "type": "number" },
+        "normalizedValue": { "type": "number" },
+        "unit": { "$ref": "#/$defs/unit" },
+        "period": { "$ref": "#/$defs/period" }
+      }
+    },
+    "componentBase": {
+      "type": "object",
+      "required": ["id", "type", "region", "sources"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "enum": ["text", "metric", "table", "chart", "insight", "image"] },
+        "region": { "$ref": "#/$defs/region" },
+        "sources": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/sourceRef" }
+        }
+      }
+    },
+    "textComponent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/componentBase" },
+        {
+          "type": "object",
+          "required": ["text", "variant"],
+          "properties": {
+            "type": { "const": "text" },
+            "text": { "$ref": "#/$defs/plainText" },
+            "variant": { "enum": ["heading", "body", "caption", "callout"] }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "metricComponent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/componentBase" },
+        {
+          "type": "object",
+          "required": ["metricId", "label", "value"],
+          "properties": {
+            "type": { "const": "metric" },
+            "sources": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": { "$ref": "#/$defs/sourceRef" }
+            },
+            "metricId": { "$ref": "#/$defs/id" },
+            "label": { "$ref": "#/$defs/title" },
+            "value": { "$ref": "#/$defs/financialValue" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "tableCell": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "text"],
+          "properties": {
+            "kind": { "const": "text" },
+            "text": {
+              "type": "string",
+              "maxLength": 300
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "financial" },
+            "value": { "$ref": "#/$defs/financialValue" }
+          }
+        }
+      ]
+    },
+    "tableComponent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/componentBase" },
+        {
+          "type": "object",
+          "required": ["columns", "rows"],
+          "properties": {
+            "type": { "const": "table" },
+            "sources": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": { "$ref": "#/$defs/sourceRef" }
+            },
+            "columns": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            },
+            "rows": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 30,
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": { "$ref": "#/$defs/tableCell" }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "chartSeries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "values"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "$ref": "#/$defs/title" },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/financialValue" }
+        }
+      }
+    },
+    "chartComponent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/componentBase" },
+        {
+          "type": "object",
+          "required": ["chartType", "categories", "series"],
+          "properties": {
+            "type": { "const": "chart" },
+            "sources": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": { "$ref": "#/$defs/sourceRef" }
+            },
+            "chartType": { "enum": ["line", "bar", "waterfall"] },
+            "categories": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            },
+            "series": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 6,
+              "items": { "$ref": "#/$defs/chartSeries" }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "insightComponent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/componentBase" },
+        {
+          "type": "object",
+          "required": ["findingId", "statement", "emphasis"],
+          "properties": {
+            "type": { "const": "insight" },
+            "sources": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": { "$ref": "#/$defs/sourceRef" }
+            },
+            "findingId": { "$ref": "#/$defs/id" },
+            "statement": { "$ref": "#/$defs/plainText" },
+            "emphasis": { "enum": ["neutral", "positive", "negative", "warning"] }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "imageComponent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/componentBase" },
+        {
+          "type": "object",
+          "required": ["assetRef", "altText"],
+          "properties": {
+            "type": { "const": "image" },
+            "assetRef": {
+              "type": "string",
+              "pattern": "^asset:[a-zA-Z][a-zA-Z0-9_.-]*$",
+              "maxLength": 120
+            },
+            "altText": { "$ref": "#/$defs/plainText" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "component": {
+      "oneOf": [
+        { "$ref": "#/$defs/textComponent" },
+        { "$ref": "#/$defs/metricComponent" },
+        { "$ref": "#/$defs/tableComponent" },
+        { "$ref": "#/$defs/chartComponent" },
+        { "$ref": "#/$defs/insightComponent" },
+        { "$ref": "#/$defs/imageComponent" }
+      ]
+    },
+    "slide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "order", "layoutId", "title", "components"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "order": { "type": "integer", "minimum": 1, "maximum": 40 },
+        "layoutId": {
+          "enum": [
+            "title",
+            "executive-summary",
+            "kpi-grid",
+            "financial-table",
+            "chart",
+            "insight"
+          ]
+        },
+        "title": { "$ref": "#/$defs/title" },
+        "speakerNotes": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": { "$ref": "#/$defs/component" }
+        }
+      }
+    }
+  }
+}
