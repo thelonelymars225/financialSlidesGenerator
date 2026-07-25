@@ -1,0 +1,112 @@
+{
+  "schemaVersion": "0.1",
+  "documentId": "document-mixed-001",
+  "source": {
+    "sourceId": "source-mixed-001",
+    "inputType": "file",
+    "mediaType": "application/pdf",
+    "fileName": "safe-mixed-financial-report.pdf"
+  },
+  "pages": [
+    {
+      "pageNumber": 1,
+      "width": 612,
+      "height": 792,
+      "coordinateUnit": "pt",
+      "blocks": [
+        {
+          "id": "native-summary-1",
+          "type": "text",
+          "order": 0,
+          "text": "Total revenue $12.4 million for Q2 2026. Margin decreased -2.5%.",
+          "numericValues": [
+            {
+              "displayedValue": "$12.4 million",
+              "value": 12400000,
+              "currency": "USD",
+              "scaleFactor": 1000000,
+              "period": "Q2 2026"
+            },
+            {
+              "displayedValue": "-2.5%",
+              "value": -0.025,
+              "unit": "percent",
+              "period": "Q2 2026"
+            }
+          ],
+          "source": {
+            "sourceId": "source-mixed-001",
+            "pageNumber": 1,
+            "sectionPath": ["Financial summary"],
+            "boundingBox": {
+              "left": 72,
+              "top": 120,
+              "right": 540,
+              "bottom": 190,
+              "unit": "pt"
+            }
+          },
+          "confidence": 0.99,
+          "extraction": {
+            "method": "native_pdf",
+            "provider": "local-parser"
+          },
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "pageNumber": 2,
+      "width": 2480,
+      "height": 3508,
+      "coordinateUnit": "px",
+      "blocks": [
+        {
+          "id": "ocr-expense-1",
+          "type": "text",
+          "order": 0,
+          "text": "Operating expenses 3.8 million SAR",
+          "numericValues": [
+            {
+              "displayedValue": "3.8 million SAR",
+              "value": 3800000,
+              "currency": "SAR",
+              "scaleFactor": 1000000
+            }
+          ],
+          "source": {
+            "sourceId": "source-mixed-001",
+            "pageNumber": 2,
+            "sectionPath": ["Operating expenses"],
+            "boundingBox": {
+              "left": 210,
+              "top": 540,
+              "right": 2110,
+              "bottom": 690,
+              "unit": "px"
+            }
+          },
+          "confidence": 0.86,
+          "extraction": {
+            "method": "ocr",
+            "provider": "local-ocr"
+          },
+          "warnings": [
+            {
+              "code": "ocr.review_recommended",
+              "severity": "warning",
+              "message": "Review the scanned-page amount before analysis."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "code": "document.mixed_routes",
+      "severity": "info",
+      "message": "The document combines native and OCR extraction routes."
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "fixtureVersion": "0.1",
+  "kind": "scanned_page",
+  "mediaType": "image/png",
+  "synthetic": true,
+  "imageText": "Operating expenses 3,800,000 SAR",
+  "resolutionDpi": 150,
+  "rotationDegrees": 0,
+  "description": "Safe scanned operating-expense page used for recorded local-OCR regression."
+}

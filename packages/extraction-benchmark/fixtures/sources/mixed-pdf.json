@@ -1,0 +1,20 @@
+{
+  "fixtureVersion": "0.1",
+  "kind": "mixed_pdf",
+  "mediaType": "application/pdf",
+  "synthetic": true,
+  "pages": [
+    {
+      "pageNumber": 1,
+      "sourceKind": "born_digital",
+      "content": "Total revenue $12.4 million for Q2 2026. Margin decreased -2.5%."
+    },
+    {
+      "pageNumber": 2,
+      "sourceKind": "scanned",
+      "imageText": "Operating expenses 3.8 million SAR",
+      "resolutionDpi": 150
+    }
+  ],
+  "description": "Safe two-page descriptor combining native text and a scanned expense page."
+}

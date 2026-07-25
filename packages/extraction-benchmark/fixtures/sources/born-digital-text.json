@@ -1,0 +1,8 @@
+{
+  "fixtureVersion": "0.1",
+  "kind": "born_digital_text",
+  "mediaType": "text/plain",
+  "synthetic": true,
+  "content": "Revenue increased to $12.4 million in Q2 2026.",
+  "description": "Safe pasted financial text with an exact value, currency, scale, and period."
+}
