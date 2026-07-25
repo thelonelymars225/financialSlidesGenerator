@@ -81,6 +81,22 @@ def test_deterministic_provider_returns_grounded_valid_analysis() -> None:
     assert result.telemetry.external_cost_usd == 0
 
 
+def test_plain_extracted_text_gets_a_bounded_numeric_fallback() -> None:
+    document = source_document()
+    block = document["pages"][0]["blocks"][0]
+    block.pop("numericValues")
+
+    result = run_analysis(
+        FinancialAnalysisService(DeterministicAnalysisProvider()),
+        document,
+    )
+
+    metric = result.analysis["metrics"][0]
+    assert metric["displayedValue"] == "$12.4 million"
+    assert metric["normalizedValue"] == 12_400_000
+    assert metric["period"]["label"] == "Q2 2026"
+
+
 def test_invalid_output_receives_one_targeted_repair() -> None:
     provider = ScriptedProvider({"schemaVersion": "0.2"}, valid_analysis())
 
