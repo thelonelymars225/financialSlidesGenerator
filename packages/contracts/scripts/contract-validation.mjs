@@ -8,6 +8,7 @@ const schemaUrls = {
   "analysis:0.1": new URL("../schemas/analysis-v0.1.schema.json", import.meta.url),
   "analysis:0.2": new URL("../schemas/analysis-v0.2.schema.json", import.meta.url),
   extractedDocument: new URL("../schemas/extracted-document-v0.1.schema.json", import.meta.url),
+  slideSpec: new URL("../schemas/slide-spec-v0.1.schema.json", import.meta.url),
 };
 
 const validators = new Map();
@@ -171,6 +172,108 @@ function semanticAnalysisErrors(analysis) {
   return errors;
 }
 
+const allowedComponentsByLayout = {
+  title: new Set(["text", "image"]),
+  "executive-summary": new Set(["text", "metric", "insight"]),
+  "kpi-grid": new Set(["text", "metric"]),
+  "financial-table": new Set(["text", "table"]),
+  chart: new Set(["text", "chart", "insight"]),
+  insight: new Set(["text", "metric", "insight"]),
+};
+
+function semanticSlideSpecErrors(deck) {
+  const errors = [];
+  const documentIds = new Set(deck.sourceDocumentIds ?? []);
+  const slideIds = new Set();
+  const slideOrders = new Set();
+  const componentIds = new Set();
+
+  for (const slide of deck.slides ?? []) {
+    if (slideIds.has(slide.id)) {
+      errors.push(`duplicate slide id ${slide.id}`);
+    }
+    if (slideOrders.has(slide.order)) {
+      errors.push(`duplicate slide order ${slide.order}`);
+    }
+    slideIds.add(slide.id);
+    slideOrders.add(slide.order);
+
+    const allowed = allowedComponentsByLayout[slide.layoutId] ?? new Set();
+    for (const component of slide.components ?? []) {
+      if (componentIds.has(component.id)) {
+        errors.push(`duplicate component id ${component.id}`);
+      }
+      componentIds.add(component.id);
+      if (!allowed.has(component.type)) {
+        errors.push(`layout ${slide.layoutId} does not allow ${component.type} components`);
+      }
+      validateSlideSources(component.sources, documentIds, component.id, errors);
+      validatePlainContent(component, component.id, errors);
+      validateComponentShape(component, errors);
+    }
+  }
+
+  const expectedOrders = Array.from({ length: slideIds.size }, (_, index) => index + 1);
+  if (expectedOrders.some((order) => !slideOrders.has(order))) {
+    errors.push("slide order must be contiguous and start at 1");
+  }
+  return errors;
+}
+
+function validateSlideSources(sources, documentIds, componentId, errors) {
+  for (const source of sources ?? []) {
+    if (!documentIds.has(source.documentId)) {
+      errors.push(`component ${componentId} references undeclared document ${source.documentId}`);
+    }
+  }
+}
+
+function validatePlainContent(value, label, errors) {
+  for (const nested of Object.values(value ?? {})) {
+    if (typeof nested === "string" && /<\/?[a-z][^>]*>|javascript:|data:text\/html/i.test(nested)) {
+      errors.push(`${label} contains unsafe markup or a scriptable URL`);
+    } else if (nested && typeof nested === "object") {
+      validatePlainContent(nested, label, errors);
+    }
+  }
+}
+
+function validateFinancialValue(value, label, errors) {
+  const normalized = value.value * value.unit.scaleFactor;
+  if (Math.abs(normalized - value.normalizedValue) > 1e-9) {
+    errors.push(`${label} normalizedValue must equal value × scaleFactor`);
+  }
+  validatePeriod(value.period, label, errors);
+}
+
+function validateComponentShape(component, errors) {
+  if (component.type === "table") {
+    for (const [index, row] of component.rows.entries()) {
+      if (row.length !== component.columns.length) {
+        errors.push(`table ${component.id} row ${index} must match its column count`);
+      }
+      for (const cell of row) {
+        if (cell.kind === "financial") {
+          validateFinancialValue(cell.value, `table ${component.id}`, errors);
+        }
+      }
+    }
+  }
+  if (component.type === "chart") {
+    for (const series of component.series) {
+      if (series.values.length !== component.categories.length) {
+        errors.push(`chart ${component.id} series ${series.id} must match its categories`);
+      }
+      for (const value of series.values) {
+        validateFinancialValue(value, `chart ${component.id} series ${series.id}`, errors);
+      }
+    }
+  }
+  if (component.type === "metric") {
+    validateFinancialValue(component.value, `metric ${component.metricId}`, errors);
+  }
+}
+
 function validateEvidence(evidenceItems, sourceDocumentIds, label, errors) {
   for (const evidence of evidenceItems ?? []) {
     if (!sourceDocumentIds.has(evidence.documentId)) {
@@ -219,6 +322,9 @@ export async function validateContract(contractName, value) {
   }
   if (schemaValid && contractName === "analysis") {
     errors.push(...semanticAnalysisErrors(value));
+  }
+  if (schemaValid && contractName === "slideSpec") {
+    errors.push(...semanticSlideSpecErrors(value));
   }
 
   return { valid: errors.length === 0, errors };

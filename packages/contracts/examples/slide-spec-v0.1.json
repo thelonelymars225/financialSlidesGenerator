@@ -1,0 +1,218 @@
+{
+  "schemaVersion": "0.1",
+  "deckId": "deck-q2-2026",
+  "sourceAnalysisId": "analysis-q2-2026",
+  "sourceDocumentIds": ["document-financial-report"],
+  "title": "Q2 2026 Financial Review",
+  "subtitle": "Revenue, margin, and outlook",
+  "audience": "Executive leadership",
+  "themeId": "theme-corporate-default",
+  "slides": [
+    {
+      "id": "slide-executive-summary",
+      "order": 1,
+      "layoutId": "executive-summary",
+      "title": "Executive summary",
+      "speakerNotes": "Lead with the source-grounded revenue result.",
+      "components": [
+        {
+          "id": "summary-heading",
+          "type": "text",
+          "region": "title",
+          "sources": [],
+          "text": "Revenue accelerated in Q2",
+          "variant": "heading"
+        },
+        {
+          "id": "summary-insight",
+          "type": "insight",
+          "region": "body",
+          "sources": [
+            {
+              "documentId": "document-financial-report",
+              "pageNumber": 1,
+              "blockId": "page-1-table-1",
+              "quote": "Q2 2026 | $12.4m"
+            }
+          ],
+          "findingId": "finding-revenue-growth",
+          "statement": "Revenue increased 24% quarter over quarter to $12.4 million.",
+          "emphasis": "positive"
+        }
+      ]
+    },
+    {
+      "id": "slide-kpi",
+      "order": 2,
+      "layoutId": "kpi-grid",
+      "title": "Revenue reached $12.4 million",
+      "components": [
+        {
+          "id": "revenue-kpi",
+          "type": "metric",
+          "region": "primary",
+          "sources": [
+            {
+              "documentId": "document-financial-report",
+              "pageNumber": 1,
+              "blockId": "page-1-table-1"
+            }
+          ],
+          "metricId": "revenue-q2-2026",
+          "label": "Q2 revenue",
+          "value": {
+            "displayedValue": "$12.4m",
+            "value": 12.4,
+            "normalizedValue": 12400000,
+            "unit": {
+              "kind": "currency",
+              "code": "USD",
+              "scaleFactor": 1000000
+            },
+            "period": {
+              "type": "quarter",
+              "label": "Q2 2026",
+              "startDate": "2026-04-01",
+              "endDate": "2026-06-30"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "slide-financial-table",
+      "order": 3,
+      "layoutId": "financial-table",
+      "title": "Quarterly revenue",
+      "components": [
+        {
+          "id": "revenue-table",
+          "type": "table",
+          "region": "body",
+          "sources": [
+            {
+              "documentId": "document-financial-report",
+              "pageNumber": 1,
+              "blockId": "page-1-table-1"
+            }
+          ],
+          "columns": ["Period", "Revenue"],
+          "rows": [
+            [
+              {
+                "kind": "text",
+                "text": "Q1 2026"
+              },
+              {
+                "kind": "financial",
+                "value": {
+                  "displayedValue": "$10.0m",
+                  "value": 10,
+                  "normalizedValue": 10000000,
+                  "unit": {
+                    "kind": "currency",
+                    "code": "USD",
+                    "scaleFactor": 1000000
+                  },
+                  "period": {
+                    "type": "quarter",
+                    "label": "Q1 2026",
+                    "startDate": "2026-01-01",
+                    "endDate": "2026-03-31"
+                  }
+                }
+              }
+            ],
+            [
+              {
+                "kind": "text",
+                "text": "Q2 2026"
+              },
+              {
+                "kind": "financial",
+                "value": {
+                  "displayedValue": "$12.4m",
+                  "value": 12.4,
+                  "normalizedValue": 12400000,
+                  "unit": {
+                    "kind": "currency",
+                    "code": "USD",
+                    "scaleFactor": 1000000
+                  },
+                  "period": {
+                    "type": "quarter",
+                    "label": "Q2 2026",
+                    "startDate": "2026-04-01",
+                    "endDate": "2026-06-30"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slide-revenue-chart",
+      "order": 4,
+      "layoutId": "chart",
+      "title": "Revenue increased quarter over quarter",
+      "components": [
+        {
+          "id": "revenue-chart",
+          "type": "chart",
+          "region": "primary",
+          "sources": [
+            {
+              "documentId": "document-financial-report",
+              "pageNumber": 1,
+              "blockId": "page-1-table-1"
+            }
+          ],
+          "chartType": "bar",
+          "categories": ["Q1 2026", "Q2 2026"],
+          "series": [
+            {
+              "id": "revenue-series",
+              "name": "Revenue",
+              "values": [
+                {
+                  "displayedValue": "$10.0m",
+                  "value": 10,
+                  "normalizedValue": 10000000,
+                  "unit": {
+                    "kind": "currency",
+                    "code": "USD",
+                    "scaleFactor": 1000000
+                  },
+                  "period": {
+                    "type": "quarter",
+                    "label": "Q1 2026",
+                    "startDate": "2026-01-01",
+                    "endDate": "2026-03-31"
+                  }
+                },
+                {
+                  "displayedValue": "$12.4m",
+                  "value": 12.4,
+                  "normalizedValue": 12400000,
+                  "unit": {
+                    "kind": "currency",
+                    "code": "USD",
+                    "scaleFactor": 1000000
+                  },
+                  "period": {
+                    "type": "quarter",
+                    "label": "Q2 2026",
+                    "startDate": "2026-04-01",
+                    "endDate": "2026-06-30"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

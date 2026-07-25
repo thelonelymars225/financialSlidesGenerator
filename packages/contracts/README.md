@@ -41,6 +41,20 @@ divided by second, and percentage change is baseline followed by current value.
 Currency metrics normalize through their declared scale factor; percentages use
 `0.01`, while counts and ratios use `1`.
 
+## Slide Specification v0.1
+
+`schemas/slide-spec-v0.1.schema.json` is the narrow boundary between analysis,
+deterministic HTML compilation, and PowerPoint rendering. Models may select only
+approved layouts, regions, and component types; they cannot emit HTML, CSS,
+JavaScript, remote URLs, or renderer instructions.
+
+The contract caps deck, component, text, table, chart, series, source, and asset
+sizes. Financial values retain their displayed text, signed numeric value,
+normalized value, currency or unit, scale factor, period, and source references.
+Semantic validation checks identity and order uniqueness, layout/component
+compatibility, declared source documents, table and chart dimensions, period
+validity, normalization, and unsafe markup.
+
 ## Versioning rules
 
 - Published schema files are immutable. A behavior-changing revision gets a new
