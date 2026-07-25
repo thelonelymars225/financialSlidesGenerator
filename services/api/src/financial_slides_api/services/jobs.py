@@ -20,7 +20,7 @@ from financial_slides_api.domain.jobs import (
     request_cancel,
 )
 from financial_slides_api.infrastructure.sqlite_jobs import SQLiteJobStore
-from financial_slides_api.ports.jobs import JobRepository, ResultStore, SourceStore
+from financial_slides_api.ports.jobs import JobRepository, JobStore, ResultStore, SourceStore
 
 
 def source_bytes(command: CreateJobCommand) -> bytes:
@@ -82,7 +82,7 @@ class ExtractionJobService:
             available_at=now,
             max_attempts=self._max_attempts,
         )
-        self._repository.create(job)
+        job = self._repository.create(job)
         self._sources.put_source(
             job.id,
             StoredSource(
@@ -116,10 +116,24 @@ class ExtractionJobService:
         return self._repository.save(cancelled) if cancelled is not job else job
 
 
+def configured_job_store() -> JobStore:
+    database_url = os.getenv("DATABASE_URL", "")
+    adapter = os.getenv("FINANCIAL_SLIDES_STORE") or ("postgres" if database_url else "sqlite")
+    if adapter == "sqlite":
+        configured = os.getenv("FINANCIAL_SLIDES_JOB_DB", ".data/extraction-jobs.sqlite3")
+        return SQLiteJobStore(Path(configured))
+    if adapter == "postgres":
+        if not database_url:
+            raise RuntimeError("DATABASE_URL is required for the postgres job store")
+        from financial_slides_api.infrastructure.postgres_jobs import PostgresJobStore
+
+        return PostgresJobStore(database_url)
+    raise RuntimeError(f"unsupported FINANCIAL_SLIDES_STORE: {adapter}")
+
+
 @lru_cache(maxsize=1)
-def get_job_store() -> SQLiteJobStore:
-    configured = os.getenv("FINANCIAL_SLIDES_JOB_DB", ".data/extraction-jobs.sqlite3")
-    return SQLiteJobStore(Path(configured))
+def get_job_store() -> JobStore:
+    return configured_job_store()
 
 
 @lru_cache(maxsize=1)

@@ -50,3 +50,21 @@ not write credentials or confidential responses to the repository.
 **Unresolved weaknesses:** Arabic OCR scope and quality, rotated/low-resolution
 scan performance, complex merged table cells, chart-number verification, and
 real document-API/VLM latency and cost still need measured provider results.
+
+## 2026-07-25 — Supabase database and object-storage foundation
+
+**Decision:** Use the existing hosted Supabase project in Frankfurt
+(`eu-central-1`) for production PostgreSQL and private object storage. Keep
+SQLite as the secretless local fallback.
+
+**Isolation:** Application tables live in a private schema with RLS enabled and
+no `anon` or `authenticated` grants. Files remain in private buckets and flow
+through the API until authentication and per-user storage policies are ready.
+
+**Deferred:** Authentication UX, retention periods, deletion schedules, direct
+browser uploads, queues/Cron, and vector storage remain separate decisions.
+RAG is still outside the first slide-generation vertical slice.
+
+**Revisit when:** Deployment measurements show the database-backed worker claim
+path is insufficient, direct uploads materially reduce API cost, or approved
+retention requirements require scheduled cleanup.

@@ -12,7 +12,8 @@ from financial_slides_api.domain.jobs import (
     retry_or_fail,
 )
 from financial_slides_api.infrastructure.sqlite_jobs import SQLiteJobStore
-from financial_slides_api.services.jobs import telemetry_from_extraction
+from financial_slides_api.ports.jobs import JobStore
+from financial_slides_api.services.jobs import get_job_store, telemetry_from_extraction
 from financial_slides_worker import (
     ExtractionError,
     ExtractionService,
@@ -30,7 +31,7 @@ def retry_delay_seconds(attempt_count: int, base_seconds: float = 1.0) -> float:
 class ExtractionJobWorker:
     def __init__(
         self,
-        store: SQLiteJobStore,
+        store: JobStore,
         extraction: ExtractionService | None = None,
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -119,10 +120,11 @@ class ExtractionJobWorker:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run queued extraction jobs.")
-    parser.add_argument("--database", default=".data/extraction-jobs.sqlite3")
+    parser.add_argument("--database")
     parser.add_argument("--limit", type=int, default=1)
     args = parser.parse_args()
-    worker = ExtractionJobWorker(SQLiteJobStore(args.database))
+    store = SQLiteJobStore(args.database) if args.database else get_job_store()
+    worker = ExtractionJobWorker(store)
     worker.run_available(args.limit)
 
 

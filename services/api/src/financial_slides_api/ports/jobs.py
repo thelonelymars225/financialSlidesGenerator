@@ -32,3 +32,7 @@ class ResultStore(Protocol):
     def put_result(self, job_id: str, document: dict[str, Any]) -> None: ...
 
     def get_result(self, job_id: str) -> dict[str, Any] | None: ...
+
+
+class JobStore(JobRepository, JobQueue, SourceStore, ResultStore, Protocol):
+    """Combined worker-facing boundary implemented by local and cloud adapters."""
