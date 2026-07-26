@@ -15,6 +15,7 @@ from financial_slides_api.infrastructure.deterministic_analysis import (
     DeterministicAnalysisProvider,
 )
 from financial_slides_api.services.analysis import FinancialAnalysisService
+from financial_slides_api.services.analysis import build_analysis_request
 
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE = ROOT / "packages" / "contracts" / "examples" / "extracted-document-text-v0.1.json"
@@ -95,6 +96,20 @@ def test_plain_extracted_text_gets_a_bounded_numeric_fallback() -> None:
     assert metric["displayedValue"] == "$12.4 million"
     assert metric["normalizedValue"] == 12_400_000
     assert metric["period"]["label"] == "Q2 2026"
+
+
+def test_plain_text_preserves_multiple_period_specific_values() -> None:
+    document = source_document()
+    block = document["pages"][0]["blocks"][0]
+    block.pop("numericValues")
+    block["text"] = "Q1 2026 | $10.0m\nQ2 2026 | $12.4m"
+
+    request = build_analysis_request(document)
+
+    assert [(number.value, number.period) for number in request.blocks[0].numbers] == [
+        (10_000_000, "Q1 2026"),
+        (12_400_000, "Q2 2026"),
+    ]
 
 
 def test_invalid_output_receives_one_targeted_repair() -> None:

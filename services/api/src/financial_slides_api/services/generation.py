@@ -48,6 +48,111 @@ def _sources(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _unique_sources(metrics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for metric in metrics:
+        for source in _sources(metric["evidence"]):
+            key = (source["documentId"], source["pageNumber"], source["blockId"])
+            unique.setdefault(key, source)
+    return list(unique.values())
+
+
+def _value(metric: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: metric[key] for key in ("displayedValue", "value", "normalizedValue", "unit", "period")
+    }
+
+
+def _speaker_notes(sources: list[dict[str, Any]]) -> str:
+    citations = (
+        f"{source['documentId']} p.{source['pageNumber']} {source['blockId']}" for source in sources
+    )
+    return f"Sources: {'; '.join(citations)}"
+
+
+def _trend_metrics(metrics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    direct = [metric for metric in metrics if "calculation" not in metric]
+    if len(direct) < 2:
+        return []
+    first = direct[0]
+    return [
+        metric
+        for metric in direct
+        if metric["name"] == first["name"] and metric["unit"] == first["unit"]
+    ]
+
+
+def _metric_slide(intent: dict[str, Any], metric: dict[str, Any]) -> dict[str, Any]:
+    sources = _sources(metric["evidence"])
+    return {
+        "layoutId": "kpi-grid",
+        "title": intent["title"],
+        "speakerNotes": _speaker_notes(sources),
+        "components": [
+            {
+                "id": f"component-{metric['id']}",
+                "type": "metric",
+                "region": "primary",
+                "sources": sources,
+                "metricId": metric["id"],
+                "label": metric["name"],
+                "value": _value(metric),
+            }
+        ],
+    }
+
+
+def _table_slide(intent: dict[str, Any], metrics: list[dict[str, Any]]) -> dict[str, Any]:
+    sources = _unique_sources(metrics)
+    return {
+        "layoutId": "financial-table",
+        "title": f"{intent['title']} — data",
+        "speakerNotes": _speaker_notes(sources),
+        "components": [
+            {
+                "id": f"table-{intent['id']}",
+                "type": "table",
+                "region": "body",
+                "sources": sources,
+                "columns": ["Period", metrics[0]["name"]],
+                "rows": [
+                    [
+                        {"kind": "text", "text": metric["period"]["label"]},
+                        {"kind": "financial", "value": _value(metric)},
+                    ]
+                    for metric in metrics
+                ],
+            }
+        ],
+    }
+
+
+def _chart_slide(intent: dict[str, Any], metrics: list[dict[str, Any]]) -> dict[str, Any]:
+    sources = _unique_sources(metrics)
+    return {
+        "layoutId": "chart",
+        "title": intent["title"],
+        "speakerNotes": _speaker_notes(sources),
+        "components": [
+            {
+                "id": f"chart-{intent['id']}",
+                "type": "chart",
+                "region": "primary",
+                "sources": sources,
+                "chartType": intent["preferredVisual"],
+                "categories": [metric["period"]["label"] for metric in metrics],
+                "series": [
+                    {
+                        "id": f"series-{intent['id']}",
+                        "name": metrics[0]["name"],
+                        "values": [_value(metric) for metric in metrics],
+                    }
+                ],
+            }
+        ],
+    }
+
+
 def build_slide_spec(analysis: dict[str, Any], deck_type: str) -> dict[str, Any]:
     """Map validated analysis to the narrow, approved slide contract."""
 
@@ -73,50 +178,53 @@ def build_slide_spec(analysis: dict[str, Any], deck_type: str) -> dict[str, Any]
     findings = {finding["id"]: finding for finding in analysis["findings"]}
 
     for intent in analysis["slideIntents"]:
+        intent_metrics = [
+            metrics[metric_id] for metric_id in intent["metricIds"] if metric_id in metrics
+        ]
         metric = next(
-            (metrics[metric_id] for metric_id in intent["metricIds"] if metric_id in metrics),
-            None,
+            (item for item in intent_metrics if "calculation" in item),
+            intent_metrics[0] if intent_metrics else None,
         )
         finding = next(
             (findings[finding_id] for finding_id in intent["findingIds"] if finding_id in findings),
             None,
         )
         if metric:
-            component = {
-                "id": f"component-{metric['id']}",
-                "type": "metric",
-                "region": "primary",
-                "sources": _sources(metric["evidence"]),
-                "metricId": metric["id"],
-                "label": metric["name"],
-                "value": {
-                    key: metric[key]
-                    for key in ("displayedValue", "value", "normalizedValue", "unit", "period")
-                },
-            }
-            layout = "kpi-grid"
+            compiled = [_metric_slide(intent, metric)]
+            trend = _trend_metrics(intent_metrics)
+            if len(trend) >= 2 and intent["preferredVisual"] in {"line", "bar", "waterfall"}:
+                compiled.extend((_table_slide(intent, trend), _chart_slide(intent, trend)))
         elif finding:
-            component = {
-                "id": f"component-{finding['id']}",
-                "type": "insight",
-                "region": "body",
-                "sources": _sources(finding["evidence"]),
-                "findingId": finding["id"],
-                "statement": finding["statement"],
-                "emphasis": "neutral",
-            }
-            layout = "insight"
+            sources = _sources(finding["evidence"])
+            compiled = [
+                {
+                    "layoutId": "insight",
+                    "title": intent["title"],
+                    "speakerNotes": _speaker_notes(sources),
+                    "components": [
+                        {
+                            "id": f"component-{finding['id']}",
+                            "type": "insight",
+                            "region": "body",
+                            "sources": sources,
+                            "findingId": finding["id"],
+                            "statement": finding["statement"],
+                            "emphasis": "neutral",
+                        }
+                    ],
+                }
+            ]
         else:
             continue
-        slides.append(
-            {
-                "id": f"slide-{intent['id']}",
-                "order": len(slides) + 1,
-                "layoutId": layout,
-                "title": intent["title"],
-                "components": [component],
-            }
-        )
+        for index, slide in enumerate(compiled, start=1):
+            suffix = f"-{index}" if len(compiled) > 1 else ""
+            slides.append(
+                {
+                    "id": f"slide-{intent['id']}{suffix}",
+                    "order": len(slides) + 1,
+                    **slide,
+                }
+            )
 
     if len(slides) == 1:
         raise ValueError("analysis did not contain a renderable slide intent")

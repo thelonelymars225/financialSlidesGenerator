@@ -51,31 +51,31 @@ def _validator(schema_path: Path) -> Draft202012Validator:
 
 
 def _text_numbers(text: str) -> tuple[SourceNumber, ...]:
-    period_match = re.search(r"\bQ[1-4]\s+20\d{2}\b", text, flags=re.IGNORECASE)
-    period = period_match.group(0) if period_match else None
-    currency = re.search(
-        r"\$(?P<number>\d[\d,]*(?:\.\d+)?)\s*(?P<scale>billion|million|thousand|bn|m|k)?",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if currency:
-        scale_label = (currency.group("scale") or "").lower()
-        scale = SCALE_FACTORS.get(scale_label, 1)
-        value = float(currency.group("number").replace(",", "")) * scale
-        return (SourceNumber(currency.group(0), value, None, "USD", scale, period),)
-    percentage = re.search(r"(?P<number>\d+(?:\.\d+)?)\s*%", text)
-    if percentage:
-        return (
-            SourceNumber(
-                percentage.group(0),
-                float(percentage.group("number")) / 100,
-                "%",
-                None,
-                0.01,
-                period,
-            ),
-        )
-    return ()
+    numbers: list[SourceNumber] = []
+    for line in text.splitlines() or (text,):
+        period_match = re.search(r"\bQ[1-4]\s+20\d{2}\b", line, flags=re.IGNORECASE)
+        period = period_match.group(0) if period_match else None
+        for currency in re.finditer(
+            r"\$(?P<number>\d[\d,]*(?:\.\d+)?)\s*(?P<scale>billion|million|thousand|bn|m|k)?",
+            line,
+            flags=re.IGNORECASE,
+        ):
+            scale_label = (currency.group("scale") or "").lower()
+            scale = SCALE_FACTORS.get(scale_label, 1)
+            value = float(currency.group("number").replace(",", "")) * scale
+            numbers.append(SourceNumber(currency.group(0), value, None, "USD", scale, period))
+        for percentage in re.finditer(r"(?P<number>\d+(?:\.\d+)?)\s*%", line):
+            numbers.append(
+                SourceNumber(
+                    percentage.group(0),
+                    float(percentage.group("number")) / 100,
+                    "%",
+                    None,
+                    0.01,
+                    period,
+                )
+            )
+    return tuple(numbers)
 
 
 def _numeric_values(block: dict[str, Any]) -> tuple[SourceNumber, ...]:
