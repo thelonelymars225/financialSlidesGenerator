@@ -5,7 +5,10 @@
   "type": "module",
   "exports": "./src/index.js",
   "scripts": {
-    "check": "node --check src/index.js && node --check src/preflight.js",
+    "check": "node --check src/index.js && node --check src/preflight.js && node --check scripts/preflight-deck.mjs && node --check test/browser-integration.test.mjs",
     "test": "node --test"
+  },
+  "devDependencies": {
+    "playwright": "1.62.0"
   }
 }
