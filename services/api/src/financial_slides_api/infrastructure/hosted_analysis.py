@@ -31,6 +31,7 @@ class HostedAnalysisConfig:
     max_output_tokens: int = 4096
     input_usd_per_million: float = 0
     output_usd_per_million: float = 0
+    data_retention_disabled: bool = True
 
 
 def _positive_number(
@@ -53,6 +54,14 @@ def hosted_config(environment: Mapping[str, str]) -> HostedAnalysisConfig:
     missing = [name for name in required if not environment.get(name, "").strip()]
     if missing:
         raise RuntimeError(f"missing hosted model configuration: {', '.join(missing)}")
+    if environment.get("MODEL_DATA_RETENTION_DISABLED", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+    }:
+        raise RuntimeError(
+            "MODEL_DATA_RETENTION_DISABLED must be true before enabling a hosted model"
+        )
 
     def price(name: str) -> float:
         try:
@@ -73,6 +82,7 @@ def hosted_config(environment: Mapping[str, str]) -> HostedAnalysisConfig:
         ),
         input_usd_per_million=price("MODEL_INPUT_USD_PER_MILLION"),
         output_usd_per_million=price("MODEL_OUTPUT_USD_PER_MILLION"),
+        data_retention_disabled=True,
     )
 
 
@@ -113,6 +123,8 @@ class OpenAICompatibleAnalysisProvider:
         transport: httpx2.AsyncBaseTransport | None = None,
         schema_path: Path | None = None,
     ) -> None:
+        if not config.data_retention_disabled:
+            raise ValueError("hosted provider data retention must be disabled")
         self._config = config
         self.model = config.model
         self._transport = transport

@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 
 from financial_slides_api.domain.jobs import (
     JobConflictError,
@@ -81,3 +81,16 @@ def cancel_job(
     except JobNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     return CancelJobResponse(job=JobResponse.from_job(job))
+
+
+@router.delete("/{job_id}/data", status_code=status.HTTP_204_NO_CONTENT)
+def delete_job_data(
+    job_id: UUID,
+    service: JobService,
+    owner_id: OwnerId = "local-development",
+) -> Response:
+    try:
+        service.delete_data(str(job_id), owner_id)
+    except JobNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -127,3 +127,18 @@ def retry_generation(
         raise _conflict(error) from error
     background.add_task(service.run, job.id)
     return GenerationJobResponse.from_job(job)
+
+
+@router.delete("/slide-jobs/{job_id}/output", status_code=status.HTTP_204_NO_CONTENT)
+def delete_generation_output(
+    job_id: UUID,
+    service: GenerationService,
+    owner_id: OwnerId = "local-development",
+) -> Response:
+    try:
+        service.delete_output(str(job_id), owner_id)
+    except GenerationNotFoundError as error:
+        raise _not_found(error) from error
+    except GenerationConflictError as error:
+        raise _conflict(error) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

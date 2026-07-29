@@ -238,3 +238,61 @@ class PostgresJobStore:
                 (job_id,),
             ).fetchone()
         return row["document_json"] if row else None
+
+    def delete_job_data(self, job_id: str) -> int:
+        """Delete source and extracted output while preserving job metadata."""
+
+        with self._connection() as connection:
+            results = connection.execute(
+                """
+                delete from financial_slides.extraction_results
+                where job_id = %s
+                """,
+                (job_id,),
+            ).rowcount
+            sources = connection.execute(
+                """
+                delete from financial_slides.extraction_sources
+                where job_id = %s
+                """,
+                (job_id,),
+            ).rowcount
+        return results + sources
+
+    def purge_job_data_before(self, cutoff: datetime, now: datetime) -> int:
+        """Remove expired content and make unfinished jobs safely terminal."""
+
+        with self._connection() as connection:
+            connection.execute(
+                """
+                update financial_slides.extraction_jobs set
+                    status='cancelled',
+                    cancel_requested=true,
+                    updated_at=%s,
+                    finished_at=%s
+                where created_at <= %s
+                    and status not in ('succeeded', 'failed', 'cancelled')
+                """,
+                (now, now, cutoff),
+            )
+            results = connection.execute(
+                """
+                delete from financial_slides.extraction_results
+                where job_id in (
+                    select id from financial_slides.extraction_jobs
+                    where created_at <= %s
+                )
+                """,
+                (cutoff,),
+            ).rowcount
+            sources = connection.execute(
+                """
+                delete from financial_slides.extraction_sources
+                where job_id in (
+                    select id from financial_slides.extraction_jobs
+                    where created_at <= %s
+                )
+                """,
+                (cutoff,),
+            ).rowcount
+        return results + sources

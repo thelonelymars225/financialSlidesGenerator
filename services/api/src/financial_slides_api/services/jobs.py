@@ -19,8 +19,11 @@ from financial_slides_api.domain.jobs import (
     StoredSource,
     request_cancel,
 )
+from financial_slides_api.infrastructure.audit import MetadataAuditLogger, NullAuditSink
 from financial_slides_api.infrastructure.sqlite_jobs import SQLiteJobStore
 from financial_slides_api.ports.jobs import JobRepository, JobStore, ResultStore, SourceStore
+from financial_slides_api.ports.privacy import AuditSink, RetentionStore
+from financial_slides_api.services.privacy import RetentionPolicy, get_retention_policy
 
 
 def source_bytes(command: CreateJobCommand) -> bytes:
@@ -49,14 +52,21 @@ class ExtractionJobService:
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         max_attempts: int = 3,
+        retention: RetentionStore | None = None,
+        policy: RetentionPolicy = RetentionPolicy(),
+        audit: AuditSink | None = None,
     ) -> None:
         self._repository = repository
         self._sources = sources
         self._results = results
         self._clock = clock
         self._max_attempts = max_attempts
+        self._retention = retention
+        self._policy = policy
+        self._audit = audit or NullAuditSink()
 
     def create(self, command: CreateJobCommand) -> Job:
+        self.purge_expired()
         digest = source_hash(command)
         request_key = command.request_key or default_request_key(command, digest)
         existing = self._repository.find_by_request_key(command.owner_id, request_key)
@@ -96,6 +106,7 @@ class ExtractionJobService:
         return job
 
     def get(self, job_id: str, owner_id: str) -> Job:
+        self.purge_expired()
         job = self._repository.get(job_id, owner_id)
         if job is None:
             raise JobNotFoundError("job was not found")
@@ -114,6 +125,40 @@ class ExtractionJobService:
         job = self.get(job_id, owner_id)
         cancelled = request_cancel(job, self._clock())
         return self._repository.save(cancelled) if cancelled is not job else job
+
+    def delete_data(self, job_id: str, owner_id: str) -> int:
+        if self._retention is None:
+            raise RuntimeError("source-data deletion is not configured")
+        job = self.get(job_id, owner_id)
+        now = self._clock()
+        cancelled = request_cancel(job, now)
+        if cancelled is not job:
+            self._repository.save(cancelled)
+        deleted = self._retention.delete_job_data(job.id)
+        self._audit.record(
+            "source_data_deleted",
+            job.id,
+            owner_id,
+            deleted_count=deleted,
+        )
+        return deleted
+
+    def purge_expired(self) -> int:
+        if self._retention is None:
+            return 0
+        now = self._clock()
+        deleted = self._retention.purge_job_data_before(
+            self._policy.source_cutoff(now),
+            now,
+        )
+        if deleted:
+            self._audit.record(
+                "source_data_expired",
+                "retention-batch",
+                None,
+                deleted_count=deleted,
+            )
+        return deleted
 
 
 def configured_job_store() -> JobStore:
@@ -139,7 +184,14 @@ def get_job_store() -> JobStore:
 @lru_cache(maxsize=1)
 def get_job_service() -> ExtractionJobService:
     store = get_job_store()
-    return ExtractionJobService(store, store, store)
+    return ExtractionJobService(
+        store,
+        store,
+        store,
+        retention=store,
+        policy=get_retention_policy(),
+        audit=MetadataAuditLogger(),
+    )
 
 
 def telemetry_from_extraction(result, attempts: int) -> JobTelemetry:

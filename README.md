@@ -69,6 +69,7 @@ MODEL_PROVIDER=openai-compatible
 MODEL_BASE_URL=https://your-provider.example/v1
 MODEL_API_KEY=your-local-secret
 MODEL_NAME=your-model
+MODEL_DATA_RETENTION_DISABLED=true
 ```
 
 For DeepSeek, only the provider and key are required; the adapter defaults to
@@ -77,11 +78,15 @@ For DeepSeek, only the provider and key are required; the adapter defaults to
 ```dotenv
 MODEL_PROVIDER=deepseek
 MODEL_API_KEY=your-local-secret
+MODEL_DATA_RETENTION_DISABLED=true
 ```
 
 Keep `.env` local and server-side. The committed example contains no key, and
-tests never make paid calls. Optional per-million-token prices in `.env` enable
-cost telemetry without changing the provider adapter.
+tests never make paid calls. Set the retention assertion only after verifying
+provider account settings; hosted analysis refuses to start otherwise. Optional
+per-million-token prices in `.env` enable cost telemetry without changing the
+provider adapter. Privacy defaults and deletion behavior are documented in
+[`docs/privacy.md`](docs/privacy.md).
 
 Queued extraction runs outside the web request. Process a bounded batch from
 the durable secretless queue with:

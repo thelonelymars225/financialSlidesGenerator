@@ -68,3 +68,25 @@ RAG is still outside the first slide-generation vertical slice.
 **Revisit when:** Deployment measurements show the database-backed worker claim
 path is insufficient, direct uploads materially reduce API cost, or approved
 retention requirements require scheduled cleanup.
+
+## 2026-07-29 — Privacy-minimizing MVP retention
+
+**Decision:** Default source content and generated outputs to 24 hours, allow
+operators to configure one to 8,760 hours, and let an owner delete either data
+class immediately. Preserve content-free job metadata for idempotency and
+diagnostics. Enforce expiry during ordinary API traffic until a production
+scheduler is selected.
+
+**Access and audit:** Deletion uses the existing owner boundary and returns
+`404` across owners. Audit events contain action, resource ID, a hashed owner
+identifier, and deletion count only. Hosted analysis requires an explicit
+operator assertion that provider retention is disabled.
+
+**Limitations:** `X-Owner-ID` is not production authentication, SQLite does not
+add database-level encryption, and lazy cleanup cannot guarantee wall-clock
+deletion when there is no API traffic. Production launch requires verified
+identity, scheduled cleanup, and durable restricted audit storage.
+
+**Revisit when:** Product/legal requirements specify a different period,
+enterprise customers require legal holds, or the production platform supplies a
+native lifecycle policy that can replace application cleanup.
