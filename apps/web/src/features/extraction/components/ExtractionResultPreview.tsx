@@ -47,7 +47,9 @@ export function ExtractionResultPreview({ result }: { result: JobResult }) {
 
       {result.document.warnings?.length ? (
         <ul className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-300/20 dark:bg-amber-950/30 dark:text-amber-100">
-          {result.document.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+          {result.document.warnings.map((warning, index) => (
+            <li key={`${warning.code}:${warning.severity}:${index}`}>{warning.message}</li>
+          ))}
         </ul>
       ) : null}
 

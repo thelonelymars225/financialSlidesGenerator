@@ -20,6 +20,7 @@ from financial_slides_api.domain.generation import (
     transition,
 )
 from financial_slides_api.infrastructure.hosted_analysis import (
+    analysis_timeout_seconds_from_environment,
     analysis_provider_from_environment,
 )
 from financial_slides_api.infrastructure.node_renderer import (
@@ -380,6 +381,9 @@ class SlideGenerationService:
 def get_generation_service() -> SlideGenerationService:
     return SlideGenerationService(
         get_job_service(),
-        FinancialAnalysisService(analysis_provider_from_environment()),
+        FinancialAnalysisService(
+            analysis_provider_from_environment(),
+            timeout_seconds=analysis_timeout_seconds_from_environment(),
+        ),
         NodePresentationRenderer(),
     )

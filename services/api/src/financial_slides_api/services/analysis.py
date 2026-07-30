@@ -33,6 +33,9 @@ SCALE_FACTORS = {
     "bn": 1_000_000_000,
     "billion": 1_000_000_000,
 }
+_GENERIC_NUMBER = re.compile(
+    r"(?<![\w$€£])(?P<open>\()?(?P<number>\d[\d,]*(?:\.\d+)?)(?P<close>\))?(?![\w%])"
+)
 
 
 def _default_contracts_dir() -> Path:
@@ -55,26 +58,50 @@ def _text_numbers(text: str) -> tuple[SourceNumber, ...]:
     for line in text.splitlines() or (text,):
         period_match = re.search(r"\bQ[1-4]\s+20\d{2}\b", line, flags=re.IGNORECASE)
         period = period_match.group(0) if period_match else None
+        typed: list[tuple[tuple[int, int], SourceNumber]] = []
         for currency in re.finditer(
-            r"\$(?P<number>\d[\d,]*(?:\.\d+)?)\s*(?P<scale>billion|million|thousand|bn|m|k)?",
+            r"\$\s*(?P<number>\d[\d,]*(?:\.\d+)?)\s*(?P<scale>billion|million|thousand|bn|m|k)?",
             line,
             flags=re.IGNORECASE,
         ):
             scale_label = (currency.group("scale") or "").lower()
             scale = SCALE_FACTORS.get(scale_label, 1)
             value = float(currency.group("number").replace(",", "")) * scale
-            numbers.append(SourceNumber(currency.group(0), value, None, "USD", scale, period))
-        for percentage in re.finditer(r"(?P<number>\d+(?:\.\d+)?)\s*%", line):
-            numbers.append(
-                SourceNumber(
-                    percentage.group(0),
-                    float(percentage.group("number")) / 100,
-                    "%",
-                    None,
-                    0.01,
-                    period,
+            typed.append(
+                (
+                    currency.span(),
+                    SourceNumber(currency.group(0), value, None, "USD", scale, period),
                 )
             )
+        for percentage in re.finditer(r"(?P<number>\d+(?:\.\d+)?)\s*%", line):
+            typed.append(
+                (
+                    percentage.span(),
+                    SourceNumber(
+                        percentage.group(0),
+                        float(percentage.group("number")) / 100,
+                        "%",
+                        None,
+                        0.01,
+                        period,
+                    ),
+                )
+            )
+        occupied = [span for span, _ in typed]
+        if period_match:
+            occupied.append(period_match.span())
+        generic: list[tuple[tuple[int, int], SourceNumber]] = []
+        for match in _GENERIC_NUMBER.finditer(line):
+            if any(start <= match.start() and match.end() <= end for start, end in occupied):
+                continue
+            displayed = match.group(0)
+            value = float(match.group("number").replace(",", ""))
+            if match.group("open") and match.group("close"):
+                value = -value
+            generic.append(
+                (match.span(), SourceNumber(displayed, value, None, None, None, period))
+            )
+        numbers.extend(number for _, number in sorted(typed + generic))
     return tuple(numbers)
 
 
@@ -131,7 +158,12 @@ def _close(left: float, right: float) -> bool:
 def _metric_matches_source(metric: dict[str, Any], number: SourceNumber) -> bool:
     unit = metric["unit"]
     normalized_value = float(metric["normalizedValue"])
-    if not _close(normalized_value, number.value):
+    metric_value = float(metric["value"])
+    metadata_free = not number.currency and not number.unit and number.scale_factor is None
+    if metadata_free:
+        if not (_close(metric_value, number.value) or _close(normalized_value, number.value)):
+            return False
+    elif not _close(normalized_value, number.value):
         return False
     if number.currency and unit["code"] != number.currency:
         return False
@@ -139,7 +171,7 @@ def _metric_matches_source(metric: dict[str, Any], number: SourceNumber) -> bool
         return False
     if number.period and metric["period"]["label"] != number.period:
         return False
-    return _close(float(metric["value"]) * float(unit["scaleFactor"]), normalized_value)
+    return _close(metric_value * float(unit["scaleFactor"]), normalized_value)
 
 
 def grounding_errors(

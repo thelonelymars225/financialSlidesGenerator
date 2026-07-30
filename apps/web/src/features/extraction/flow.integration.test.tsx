@@ -69,4 +69,27 @@ describe("submit → poll → render integration", () => {
     expect(markup).toContain("Remove the document password");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it("renders structured PDF warnings with unique React keys", () => {
+    const result: JobResult = {
+      ...successfulResult,
+      document: {
+        ...successfulResult.document,
+        warnings: [
+          { code: "document.route.mixed", severity: "info", message: "Mixed extraction route." },
+          { code: "ocr.low_confidence", severity: "warning", message: "Review OCR output." },
+        ],
+      },
+    };
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const markup = renderToStaticMarkup(<ExtractionResultPreview result={result} />);
+      expect(markup).toContain("Mixed extraction route.");
+      expect(markup).toContain("Review OCR output.");
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 });

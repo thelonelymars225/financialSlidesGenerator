@@ -112,6 +112,19 @@ def test_plain_text_preserves_multiple_period_specific_values() -> None:
     ]
 
 
+def test_plain_table_numbers_are_available_for_grounded_analysis() -> None:
+    document = source_document()
+    block = document["pages"][0]["blocks"][0]
+    block.pop("numericValues")
+    block["text"] = "Adjusted net income 4,007; prior period (4,582); gearing 12.5%"
+
+    numbers = build_analysis_request(document).blocks[0].numbers
+
+    assert any(number.displayed_value == "4,007" and number.value == 4007 for number in numbers)
+    assert any(number.displayed_value == "(4,582)" and number.value == -4582 for number in numbers)
+    assert any(number.displayed_value == "12.5%" and number.value == 0.125 for number in numbers)
+
+
 def test_invalid_output_receives_one_targeted_repair() -> None:
     provider = ScriptedProvider({"schemaVersion": "0.2"}, valid_analysis())
 

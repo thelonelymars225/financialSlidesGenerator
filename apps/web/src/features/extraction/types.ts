@@ -14,6 +14,12 @@ export type JobTelemetry = {
   external_cost_usd: number;
 };
 
+export type ExtractionWarning = {
+  code: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+};
+
 export type ExtractionJob = {
   id: string;
   input_mode: InputMode;
@@ -62,7 +68,7 @@ export type ExtractedBlock = {
   }>;
   source?: SourceReference;
   confidence?: number;
-  warnings?: string[];
+  warnings?: ExtractionWarning[];
 };
 
 export type ExtractedDocument = {
@@ -79,7 +85,7 @@ export type ExtractedDocument = {
     pageNumber?: number;
     blocks?: ExtractedBlock[];
   }>;
-  warnings?: string[];
+  warnings?: ExtractionWarning[];
 };
 
 export type JobResult = {

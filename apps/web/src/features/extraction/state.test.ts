@@ -27,8 +27,8 @@ describe("extraction state mapping", () => {
     expect(orderedBlocks([{ id: "b", order: 2 }, { id: "a", order: 1 }]).map((block) => block.id)).toEqual(["a", "b"]);
     expect(sourceLabel({ pageNumber: 7, sectionPath: ["Results", "Revenue"] })).toBe("Page 7 · Results › Revenue");
     expect(documentSummary({
-      pages: [{ blocks: [{ warnings: ["low confidence"] }, {}] }],
-      warnings: ["review"],
+      pages: [{ blocks: [{ warnings: [{ code: "ocr.low", severity: "warning", message: "Low confidence" }] }, {}] }],
+      warnings: [{ code: "review", severity: "info", message: "Review required" }],
     })).toEqual({ pageCount: 1, blockCount: 2, warningCount: 2 });
   });
 });

@@ -8,6 +8,7 @@ from financial_slides_api.infrastructure.hosted_analysis import (
     DeepSeekAnalysisProvider,
     HostedAnalysisConfig,
     OpenAICompatibleAnalysisProvider,
+    analysis_timeout_seconds_from_environment,
     analysis_provider_from_environment,
 )
 from financial_slides_api.services.analysis import (
@@ -65,9 +66,73 @@ def test_deepseek_uses_safe_current_defaults_and_json_mode() -> None:
     assert sent["model"] == "deepseek-v4-flash"
     assert sent["response_format"] == {"type": "json_object"}
     assert sent["thinking"] == {"type": "disabled"}
+    assert "at most 3 executive-summary items" in sent["messages"][0]["content"]
+    assert "only permitted source for a metric" in sent["messages"][0]["content"]
     assert "max_tokens" in sent
     assert "max_completion_tokens" not in sent
     assert result.telemetry.provider == "deepseek"
+
+
+def test_deepseek_defaults_to_an_ipv4_transport() -> None:
+    provider = analysis_provider_from_environment(
+        {"MODEL_PROVIDER": "deepseek", "MODEL_API_KEY": "test-secret"}
+    )
+
+    assert isinstance(provider._transport_for_request(), httpx2.AsyncHTTPTransport)
+
+
+def test_deepseek_normalizes_half_year_period_to_contract_range() -> None:
+    provider = analysis_provider_from_environment(
+        {"MODEL_PROVIDER": "deepseek", "MODEL_API_KEY": "test-secret"}
+    )
+    output = {"metrics": [{"period": {"type": "half-year"}}]}
+
+    assert provider._normalize_output(output)["metrics"][0]["period"]["type"] == "range"
+
+
+def test_deepseek_drops_invalid_single_operand_calculation() -> None:
+    provider = analysis_provider_from_environment(
+        {"MODEL_PROVIDER": "deepseek", "MODEL_API_KEY": "test-secret"}
+    )
+    output = {
+        "metrics": [
+            {
+                "calculation": {
+                    "operation": "percentage_change",
+                    "operandMetricIds": ["metric-prior"],
+                }
+            }
+        ]
+    }
+
+    assert "calculation" not in provider._normalize_output(output)["metrics"][0]
+
+
+def test_deepseek_canonicalizes_metric_to_exact_source_number() -> None:
+    provider = analysis_provider_from_environment(
+        {"MODEL_PROVIDER": "deepseek", "MODEL_API_KEY": "test-secret"}
+    )
+    request = build_analysis_request(source_document())
+    output = valid_analysis()
+    metric = output["metrics"][0]
+    metric["displayedValue"] = "$12.4 million"
+    metric["value"] = 12_400_000
+    metric["normalizedValue"] = 12_400_000
+    metric["unit"] = {"kind": "count", "code": "count", "scaleFactor": 1}
+    metric["evidence"][0]["quote"] = "not an exact source quote"
+
+    normalized = provider._normalize_output(output, request)
+    metric = normalized["metrics"][0]
+
+    assert metric["value"] == 12.4
+    assert metric["normalizedValue"] == 12_400_000
+    assert metric["unit"] == {"kind": "currency", "code": "USD", "scaleFactor": 1_000_000}
+    assert "quote" not in metric["evidence"][0]
+
+
+def test_analysis_timeout_uses_environment_configuration() -> None:
+    assert analysis_timeout_seconds_from_environment({}) == 30
+    assert analysis_timeout_seconds_from_environment({"MODEL_TIMEOUT_SECONDS": "60"}) == 60
 
 
 def test_hosted_provider_requires_complete_server_configuration() -> None:
