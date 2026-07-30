@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import backendResponses from "../../../../../fixtures/integration/extraction-api-v0.1.json";
 import { createExtractionApi } from "./api";
-import { ExtractionResultPreview } from "./components/ExtractionResultPreview";
+import {
+  ExtractedDocumentDetails,
+  ExtractionResultPreview,
+} from "./components/ExtractionResultPreview";
 import { JobStatusPanel } from "./components/JobStatusPanel";
 import { submitPollAndLoad } from "./flow";
 import type { CreateJobRequest, ExtractionJob, JobResult } from "./types";
@@ -47,9 +50,54 @@ describe("submit → poll → render integration", () => {
 
     expect(flow.job.status).toBe("succeeded");
     const markup = renderToStaticMarkup(<ExtractionResultPreview result={flow.result!} />);
-    expect(markup).toContain("Revenue increased to $12.4 million.");
-    expect(markup).toContain("Page 1 · Pasted input");
+    expect(markup).toContain("View extracted content");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("Revenue increased to $12.4 million.");
+    expect(markup).toContain("Pages");
+    expect(markup).toContain("Blocks");
     expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it("reveals content in a bounded, accessible panel only after opt-in", () => {
+    const largeDocument: JobResult["document"] = {
+      ...successfulResult.document,
+      pages: [{
+        pageNumber: 1,
+        blocks: [
+          {
+            id: "long-text",
+            type: "paragraph",
+            order: 0,
+            text: `CONFIDENTIAL-PREVIEW ${"long financial narrative ".repeat(300)}`,
+          },
+          {
+            id: "wide-table",
+            type: "table",
+            order: 1,
+            cells: [
+              { row: 0, column: 0, text: "Metric" },
+              { row: 0, column: 1, text: "Q2 2026" },
+            ],
+          },
+        ],
+      }],
+    };
+    const collapsed = renderToStaticMarkup(
+      <ExtractedDocumentDetails document={largeDocument} expanded={false} onToggle={() => undefined} />,
+    );
+    const expanded = renderToStaticMarkup(
+      <ExtractedDocumentDetails document={largeDocument} expanded onToggle={() => undefined} />,
+    );
+
+    expect(collapsed).toContain("View extracted content");
+    expect(collapsed).not.toContain("CONFIDENTIAL-PREVIEW");
+    expect(expanded).toContain("Hide extracted content");
+    expect(expanded).toContain('role="region"');
+    expect(expanded).toContain("max-h-[32rem]");
+    expect(expanded).toContain("overflow-y-auto");
+    expect(expanded).toContain("overflow-x-auto");
+    expect(expanded).toContain("CONFIDENTIAL-PREVIEW");
+    expect(expanded).not.toContain("long financial narrative ".repeat(300));
   });
 
   it("renders an actionable typed failure and never requests a result", async () => {
