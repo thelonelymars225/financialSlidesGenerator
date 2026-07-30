@@ -3,6 +3,9 @@
 import argparse
 from collections.abc import Callable
 from datetime import UTC, datetime
+import logging
+import signal
+from threading import Event
 
 from financial_slides_api.domain.jobs import (
     Job,
@@ -22,6 +25,7 @@ from financial_slides_worker import (
 )
 
 RETRYABLE_FAILURES = frozenset({"extraction_timeout"})
+LOGGER = logging.getLogger(__name__)
 
 
 def retry_delay_seconds(attempt_count: int, base_seconds: float = 1.0) -> float:
@@ -118,14 +122,74 @@ class ExtractionJobWorker:
         )
 
 
+def run_watch_loop(
+    worker: ExtractionJobWorker,
+    *,
+    requested_limit: int,
+    poll_interval_seconds: float,
+    error_backoff_seconds: float,
+    wait_for_stop: Callable[[float], bool],
+) -> int:
+    if requested_limit < 1:
+        raise ValueError("requested_limit must be positive")
+    if poll_interval_seconds <= 0:
+        raise ValueError("poll_interval_seconds must be positive")
+    if error_backoff_seconds <= 0:
+        raise ValueError("error_backoff_seconds must be positive")
+
+    processed_total = 0
+    while True:
+        try:
+            processed = worker.run_available(requested_limit)
+        except Exception:
+            LOGGER.error(
+                "Worker batch failed; retrying after %.1f seconds.",
+                error_backoff_seconds,
+            )
+            delay = error_backoff_seconds
+        else:
+            processed_total += processed
+            delay = 0 if processed else poll_interval_seconds
+
+        if wait_for_stop(delay):
+            return processed_total
+
+
+def _stop_event() -> Event:
+    stop = Event()
+
+    def request_stop(_signum, _frame) -> None:
+        stop.set()
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+    return stop
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run queued extraction jobs.")
     parser.add_argument("--database")
     parser.add_argument("--limit", type=int, default=1)
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Keep polling for queued jobs until the process receives SIGINT or SIGTERM.",
+    )
+    parser.add_argument("--poll-interval-seconds", type=float, default=1.0)
+    parser.add_argument("--error-backoff-seconds", type=float, default=5.0)
     args = parser.parse_args()
     store = SQLiteJobStore(args.database) if args.database else get_job_store()
     worker = ExtractionJobWorker(store)
-    worker.run_available(args.limit)
+    if args.watch:
+        run_watch_loop(
+            worker,
+            requested_limit=args.limit,
+            poll_interval_seconds=args.poll_interval_seconds,
+            error_backoff_seconds=args.error_backoff_seconds,
+            wait_for_stop=_stop_event().wait,
+        )
+    else:
+        worker.run_available(args.limit)
 
 
 if __name__ == "__main__":
