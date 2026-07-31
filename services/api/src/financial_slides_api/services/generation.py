@@ -19,6 +19,7 @@ from financial_slides_api.domain.generation import (
     GenerationStatus,
     transition,
 )
+from financial_slides_api.infrastructure.audit import MetadataAuditLogger, NullAuditSink
 from financial_slides_api.infrastructure.hosted_analysis import (
     analysis_timeout_seconds_from_environment,
     analysis_provider_from_environment,
@@ -28,8 +29,10 @@ from financial_slides_api.infrastructure.node_renderer import (
     RendererError,
 )
 from financial_slides_api.ports.generation import PresentationArtifactRenderer
+from financial_slides_api.ports.privacy import AuditSink
 from financial_slides_api.services.analysis import FinancialAnalysisService
 from financial_slides_api.services.jobs import ExtractionJobService, get_job_service
+from financial_slides_api.services.privacy import RetentionPolicy, get_retention_policy
 
 DECK_TITLES = {
     "management-review": "Management Review",
@@ -251,16 +254,21 @@ class SlideGenerationService:
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         max_attempts: int = 2,
+        policy: RetentionPolicy = RetentionPolicy(),
+        audit: AuditSink | None = None,
     ) -> None:
         self._extraction = extraction
         self._analysis = analysis
         self._renderer = renderer
         self._clock = clock
         self._max_attempts = max_attempts
+        self._policy = policy
+        self._audit = audit or NullAuditSink()
         self._jobs: dict[str, GenerationJob] = {}
         self._lock = RLock()
 
     def start(self, extraction_job_id: str, owner_id: str, deck_type: str) -> GenerationJob:
+        self._purge_expired_outputs()
         extraction_job, _ = self._extraction.result(extraction_job_id, owner_id)
         if deck_type != extraction_job.deck_purpose:
             raise GenerationConflictError("deck type must match the extraction request")
@@ -282,6 +290,7 @@ class SlideGenerationService:
         return job
 
     def get(self, job_id: str, owner_id: str) -> GenerationJob:
+        self._purge_expired_outputs()
         with self._lock:
             job = self._jobs.get(job_id)
         if job is None or job.owner_id != owner_id:
@@ -376,6 +385,51 @@ class SlideGenerationService:
             raise GenerationNotReadyError("PowerPoint artifact is not available")
         return job.artifact
 
+    def delete_output(self, job_id: str, owner_id: str) -> int:
+        job = self.get(job_id, owner_id)
+        if job.status not in {GenerationStatus.SUCCEEDED, GenerationStatus.FAILED}:
+            raise GenerationConflictError(
+                "slide-generation output cannot be deleted while processing"
+            )
+        deleted = int(job.slide_spec is not None) + int(job.artifact is not None)
+        self._save(
+            replace(
+                job,
+                updated_at=self._clock(),
+                slide_spec=None,
+                artifact=None,
+            )
+        )
+        self._audit.record(
+            "generation_output_deleted",
+            job.id,
+            owner_id,
+            deleted_count=deleted,
+        )
+        return deleted
+
+    def _purge_expired_outputs(self) -> int:
+        cutoff = self._policy.artifact_cutoff(self._clock())
+        expired: list[GenerationJob] = []
+        with self._lock:
+            for job in self._jobs.values():
+                if (
+                    job.status in {GenerationStatus.SUCCEEDED, GenerationStatus.FAILED}
+                    and job.updated_at <= cutoff
+                    and (job.slide_spec is not None or job.artifact is not None)
+                ):
+                    expired.append(job)
+            for job in expired:
+                self._jobs[job.id] = replace(job, slide_spec=None, artifact=None)
+        for job in expired:
+            self._audit.record(
+                "generation_output_expired",
+                job.id,
+                None,
+                deleted_count=int(job.slide_spec is not None) + int(job.artifact is not None),
+            )
+        return len(expired)
+
 
 @lru_cache(maxsize=1)
 def get_generation_service() -> SlideGenerationService:
@@ -386,4 +440,6 @@ def get_generation_service() -> SlideGenerationService:
             timeout_seconds=analysis_timeout_seconds_from_environment(),
         ),
         NodePresentationRenderer(),
+        policy=get_retention_policy(),
+        audit=MetadataAuditLogger(),
     )

@@ -265,3 +265,53 @@ class SQLiteJobStore:
                 (job_id,),
             ).fetchone()
         return json.loads(row["document_json"]) if row else None
+
+    def delete_job_data(self, job_id: str) -> int:
+        """Delete source and extracted output while preserving job metadata."""
+
+        with self._connection() as connection:
+            results = connection.execute(
+                "DELETE FROM extraction_results WHERE job_id = ?",
+                (job_id,),
+            ).rowcount
+            sources = connection.execute(
+                "DELETE FROM extraction_sources WHERE job_id = ?",
+                (job_id,),
+            ).rowcount
+        return results + sources
+
+    def purge_job_data_before(self, cutoff: datetime, now: datetime) -> int:
+        """Remove expired content and make unfinished jobs safely terminal."""
+
+        cutoff_iso = cutoff.isoformat()
+        now_iso = now.isoformat()
+        with self._connection() as connection:
+            connection.execute(
+                """
+                UPDATE extraction_jobs SET
+                    status='cancelled', cancel_requested=1,
+                    updated_at=?, finished_at=?
+                WHERE created_at <= ?
+                    AND status NOT IN ('succeeded', 'failed', 'cancelled')
+                """,
+                (now_iso, now_iso, cutoff_iso),
+            )
+            results = connection.execute(
+                """
+                DELETE FROM extraction_results
+                WHERE job_id IN (
+                    SELECT id FROM extraction_jobs WHERE created_at <= ?
+                )
+                """,
+                (cutoff_iso,),
+            ).rowcount
+            sources = connection.execute(
+                """
+                DELETE FROM extraction_sources
+                WHERE job_id IN (
+                    SELECT id FROM extraction_jobs WHERE created_at <= ?
+                )
+                """,
+                (cutoff_iso,),
+            ).rowcount
+        return results + sources

@@ -55,7 +55,11 @@ def test_deepseek_uses_safe_current_defaults_and_json_mode() -> None:
         return httpx2.Response(200, json=response(output))
 
     provider = analysis_provider_from_environment(
-        {"MODEL_PROVIDER": "deepseek", "MODEL_API_KEY": "test-secret"},
+        {
+            "MODEL_PROVIDER": "deepseek",
+            "MODEL_API_KEY": "test-secret",
+            "MODEL_DATA_RETENTION_DISABLED": "true",
+        },
         transport=httpx2.MockTransport(handler),
     )
     result = asyncio.run(FinancialAnalysisService(provider).analyze(source_document()))
@@ -143,6 +147,21 @@ def test_hosted_provider_requires_complete_server_configuration() -> None:
                 "MODEL_BASE_URL": "https://provider.example/v1",
             }
         )
+
+
+def test_hosted_provider_requires_retention_disabled_assertion() -> None:
+    with pytest.raises(RuntimeError, match="MODEL_DATA_RETENTION_DISABLED"):
+        analysis_provider_from_environment(
+            {
+                "MODEL_PROVIDER": "openai-compatible",
+                "MODEL_BASE_URL": "https://provider.example/v1",
+                "MODEL_API_KEY": "test-secret",
+                "MODEL_NAME": "cheap-model",
+            }
+        )
+
+    with pytest.raises(ValueError, match="retention"):
+        OpenAICompatibleAnalysisProvider(config(data_retention_disabled=False))
 
 
 def test_hosted_provider_sends_minimal_context_and_maps_usage() -> None:
