@@ -1,7 +1,10 @@
 """Application orchestration for analysis, slide compilation, and rendering."""
 
 import asyncio
+import os
 from collections.abc import Callable
+from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -20,6 +23,9 @@ from financial_slides_api.domain.generation import (
     transition,
 )
 from financial_slides_api.infrastructure.audit import MetadataAuditLogger, NullAuditSink
+from financial_slides_api.infrastructure.deterministic_analysis import (
+    DeterministicAnalysisProvider,
+)
 from financial_slides_api.infrastructure.hosted_analysis import (
     analysis_timeout_seconds_from_environment,
     analysis_provider_from_environment,
@@ -28,6 +34,7 @@ from financial_slides_api.infrastructure.node_renderer import (
     NodePresentationRenderer,
     RendererError,
 )
+from financial_slides_api.ports.analysis import AnalysisProvider
 from financial_slides_api.ports.generation import PresentationArtifactRenderer
 from financial_slides_api.ports.privacy import AuditSink
 from financial_slides_api.services.analysis import FinancialAnalysisService
@@ -157,7 +164,48 @@ def _chart_slide(intent: dict[str, Any], metrics: list[dict[str, Any]]) -> dict[
     }
 
 
-def build_slide_spec(analysis: dict[str, Any], deck_type: str) -> dict[str, Any]:
+def _copy_slide(slide: dict[str, Any], copy_number: int) -> dict[str, Any]:
+    copied = deepcopy(slide)
+    suffix = f"-copy-{copy_number}"
+
+    def make_ids_unique(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == "id" and isinstance(item, str):
+                    value[key] = f"{item[: 100 - len(suffix)]}{suffix}"
+                else:
+                    make_ids_unique(item)
+        elif isinstance(value, list):
+            for item in value:
+                make_ids_unique(item)
+
+    make_ids_unique(copied)
+    copied["title"] = f"{slide['title']} — detail {copy_number}"[:120]
+    return copied
+
+
+def _fit_slide_count(slides: list[dict[str, Any]], slide_count: int) -> list[dict[str, Any]]:
+    if slide_count < 1:
+        raise ValueError("slide_count must be positive")
+    fitted = slides[:slide_count]
+    content = fitted[1:]
+    copy_number = 1
+    while len(fitted) < slide_count:
+        if not content:
+            raise ValueError("analysis did not contain enough renderable content")
+        source = content[(copy_number - 1) % len(content)]
+        fitted.append(_copy_slide(source, copy_number))
+        copy_number += 1
+    for order, slide in enumerate(fitted, start=1):
+        slide["order"] = order
+    return fitted
+
+
+def build_slide_spec(
+    analysis: dict[str, Any],
+    deck_type: str,
+    slide_count: int,
+) -> dict[str, Any]:
     """Map validated analysis to the narrow, approved slide contract."""
 
     slides: list[dict[str, Any]] = [
@@ -232,6 +280,81 @@ def build_slide_spec(analysis: dict[str, Any], deck_type: str) -> dict[str, Any]
 
     if len(slides) == 1:
         raise ValueError("analysis did not contain a renderable slide intent")
+
+    rendered_metric_ids = {
+        component.get("metricId")
+        for slide in slides
+        for component in slide["components"]
+        if component.get("metricId")
+    }
+    for metric in metrics.values():
+        if len(slides) >= slide_count or metric["id"] in rendered_metric_ids:
+            continue
+        slide = _metric_slide({"title": f"{metric['name']} — detail"}, metric)
+        slides.append(
+            {
+                "id": f"slide-metric-{metric['id']}",
+                "order": len(slides) + 1,
+                **slide,
+            }
+        )
+
+    rendered_finding_ids = {
+        component.get("findingId")
+        for slide in slides
+        for component in slide["components"]
+        if component.get("findingId")
+    }
+    for finding in findings.values():
+        if len(slides) >= slide_count or finding["id"] in rendered_finding_ids:
+            continue
+        sources = _sources(finding["evidence"])
+        slides.append(
+            {
+                "id": f"slide-finding-{finding['id']}",
+                "order": len(slides) + 1,
+                "layoutId": "insight",
+                "title": finding["title"],
+                "speakerNotes": _speaker_notes(sources),
+                "components": [
+                    {
+                        "id": f"component-finding-{finding['id']}",
+                        "type": "insight",
+                        "region": "body",
+                        "sources": sources,
+                        "findingId": finding["id"],
+                        "statement": finding["statement"],
+                        "emphasis": "neutral",
+                    }
+                ],
+            }
+        )
+
+    summary_sources = _unique_sources(list(metrics.values()))[:20]
+    for index, summary in enumerate(analysis["executiveSummary"], start=1):
+        if len(slides) >= slide_count:
+            break
+        slides.append(
+            {
+                "id": f"slide-summary-{index}",
+                "order": len(slides) + 1,
+                "layoutId": "insight",
+                "title": "Executive summary",
+                "speakerNotes": _speaker_notes(summary_sources),
+                "components": [
+                    {
+                        "id": f"component-summary-{index}",
+                        "type": "text",
+                        "region": "body",
+                        "sources": summary_sources,
+                        "text": summary,
+                        "variant": "callout",
+                    }
+                ],
+            }
+        )
+
+    slides = _fit_slide_count(slides, slide_count)
     return {
         "schemaVersion": "0.1",
         "deckId": f"deck-{analysis['analysisId']}",
@@ -278,6 +401,7 @@ class SlideGenerationService:
             extraction_job_id=extraction_job_id,
             owner_id=owner_id,
             deck_type=deck_type,
+            slide_count=extraction_job.slide_count,
             status=GenerationStatus.QUEUED,
             progress=0,
             attempt_count=0,
@@ -312,7 +436,7 @@ class SlideGenerationService:
         try:
             _, document = self._extraction.result(job.extraction_job_id, job.owner_id)
             analysis = await self._analysis.analyze(document)
-            slide_spec = build_slide_spec(analysis.analysis, job.deck_type)
+            slide_spec = build_slide_spec(analysis.analysis, job.deck_type, job.slide_count)
             self._save(
                 transition(
                     replace(job, slide_spec=slide_spec),
@@ -431,12 +555,32 @@ class SlideGenerationService:
         return len(expired)
 
 
+def _analysis_provider_for_generation(
+    environment: Mapping[str, str] = os.environ,
+) -> AnalysisProvider:
+    try:
+        return analysis_provider_from_environment(environment)
+    except RuntimeError as error:
+        provider = environment.get("MODEL_PROVIDER", "deterministic").strip().lower()
+        if provider in {"deepseek", "openai-compatible"} and str(error).startswith(
+            "MODEL_DATA_RETENTION_DISABLED"
+        ):
+            return DeterministicAnalysisProvider()
+        raise
+
+
 @lru_cache(maxsize=1)
 def get_generation_service() -> SlideGenerationService:
+    provider = _analysis_provider_for_generation()
     return SlideGenerationService(
         get_job_service(),
         FinancialAnalysisService(
-            analysis_provider_from_environment(),
+            provider,
+            fallback_provider=(
+                None
+                if getattr(provider, "name", None) == "deterministic"
+                else DeterministicAnalysisProvider()
+            ),
             timeout_seconds=analysis_timeout_seconds_from_environment(),
         ),
         NodePresentationRenderer(),

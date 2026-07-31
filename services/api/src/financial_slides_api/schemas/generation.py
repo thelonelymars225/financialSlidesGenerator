@@ -23,6 +23,7 @@ class GenerationJobResponse(BaseModel):
     id: UUID
     extraction_job_id: UUID
     deck_type: str
+    slide_count: int
     status: Literal["queued", "analyzing", "rendering", "succeeded", "failed"]
     progress: int
     attempt_count: int
@@ -37,6 +38,7 @@ class GenerationJobResponse(BaseModel):
             id=UUID(job.id),
             extraction_job_id=UUID(job.extraction_job_id),
             deck_type=job.deck_type,
+            slide_count=job.slide_count,
             status=job.status.value,
             progress=job.progress,
             attempt_count=job.attempt_count,

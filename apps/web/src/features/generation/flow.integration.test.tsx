@@ -13,6 +13,7 @@ function job(status: GenerationJob["status"], attemptCount = 1): GenerationJob {
     id: "61b109d8-d46b-4e73-8b38-d60d1bcb3204",
     extraction_job_id: extractionJobId,
     deck_type: "management-review",
+    slide_count: 8,
     status,
     progress: status === "succeeded" || status === "failed" ? 100 : 25,
     attempt_count: attemptCount,

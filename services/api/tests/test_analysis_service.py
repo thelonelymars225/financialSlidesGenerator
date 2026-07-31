@@ -149,6 +149,22 @@ def test_repair_exhaustion_is_a_typed_failure() -> None:
     assert provider.calls == 2
 
 
+def test_repair_exhaustion_uses_validated_grounded_fallback() -> None:
+    provider = ScriptedProvider({"schemaVersion": "0.2"})
+    service = FinancialAnalysisService(
+        provider,
+        fallback_provider=DeterministicAnalysisProvider(),
+    )
+
+    result = run_analysis(service)
+
+    assert provider.calls == 2
+    assert result.telemetry.provider == "deterministic"
+    assert result.telemetry.provider_calls == 3
+    assert result.telemetry.repair_attempts == 1
+    assert result.analysis["metrics"][0]["displayedValue"] == "$12.4 million"
+
+
 def test_timeout_is_typed_and_retryable() -> None:
     provider = ScriptedProvider(valid_analysis(), delay=0.05)
 

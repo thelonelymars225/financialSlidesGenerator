@@ -254,6 +254,7 @@ class FinancialAnalysisService:
         self,
         provider: AnalysisProvider,
         *,
+        fallback_provider: AnalysisProvider | None = None,
         contracts_dir: Path | None = None,
         timeout_seconds: float = 30,
         max_repair_attempts: int = 1,
@@ -265,6 +266,7 @@ class FinancialAnalysisService:
         self._source_validator = _validator(schemas / "extracted-document-v0.1.schema.json")
         self._analysis_validator = _validator(schemas / "analysis-v0.2.schema.json")
         self._provider = provider
+        self._fallback_provider = fallback_provider
         self._timeout_seconds = timeout_seconds
         self._max_repair_attempts = max_repair_attempts
         self._timer = timer
@@ -339,6 +341,53 @@ class FinancialAnalysisService:
                     ),
                 )
             feedback = validation_errors[:MAX_FEEDBACK_ERRORS]
+
+        if is_cancelled():
+            raise AnalysisError(AnalysisFailureCode.CANCELLED, "analysis was cancelled")
+
+        if self._fallback_provider is not None:
+            try:
+                fallback = await asyncio.wait_for(
+                    self._fallback_provider.analyze(request, feedback),
+                    timeout=self._timeout_seconds,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                fallback = None
+            if fallback is not None:
+                fallback_schema_errors = _schema_errors(
+                    self._analysis_validator,
+                    fallback.output,
+                )
+                fallback_evidence_errors = (
+                    ()
+                    if fallback_schema_errors
+                    else grounding_errors(fallback.output, request)
+                )
+                if not fallback_schema_errors and not fallback_evidence_errors:
+                    totals = ProviderTelemetry(
+                        provider=fallback.telemetry.provider,
+                        model=fallback.telemetry.model,
+                        input_tokens=totals.input_tokens + fallback.telemetry.input_tokens,
+                        output_tokens=totals.output_tokens + fallback.telemetry.output_tokens,
+                        external_cost_usd=(
+                            totals.external_cost_usd + fallback.telemetry.external_cost_usd
+                        ),
+                    )
+                    return AnalysisResult(
+                        analysis=fallback.output,
+                        telemetry=AnalysisTelemetry(
+                            provider=totals.provider,
+                            model=totals.model,
+                            duration_ms=(self._timer() - started) * 1000,
+                            provider_calls=self._max_repair_attempts + 2,
+                            repair_attempts=self._max_repair_attempts,
+                            input_tokens=totals.input_tokens,
+                            output_tokens=totals.output_tokens,
+                            external_cost_usd=totals.external_cost_usd,
+                        ),
+                    )
 
         failure_code = (
             AnalysisFailureCode.INVALID_OUTPUT

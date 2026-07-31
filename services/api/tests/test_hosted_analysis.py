@@ -79,7 +79,11 @@ def test_deepseek_uses_safe_current_defaults_and_json_mode() -> None:
 
 def test_deepseek_defaults_to_an_ipv4_transport() -> None:
     provider = analysis_provider_from_environment(
-        {"MODEL_PROVIDER": "deepseek", "MODEL_API_KEY": "test-secret"}
+        {
+            "MODEL_PROVIDER": "deepseek",
+            "MODEL_API_KEY": "test-secret",
+            "MODEL_DATA_RETENTION_DISABLED": "true",
+        }
     )
 
     assert isinstance(provider._transport_for_request(), httpx2.AsyncHTTPTransport)
@@ -87,7 +91,11 @@ def test_deepseek_defaults_to_an_ipv4_transport() -> None:
 
 def test_deepseek_normalizes_half_year_period_to_contract_range() -> None:
     provider = analysis_provider_from_environment(
-        {"MODEL_PROVIDER": "deepseek", "MODEL_API_KEY": "test-secret"}
+        {
+            "MODEL_PROVIDER": "deepseek",
+            "MODEL_API_KEY": "test-secret",
+            "MODEL_DATA_RETENTION_DISABLED": "true",
+        }
     )
     output = {"metrics": [{"period": {"type": "half-year"}}]}
 
@@ -96,7 +104,11 @@ def test_deepseek_normalizes_half_year_period_to_contract_range() -> None:
 
 def test_deepseek_drops_invalid_single_operand_calculation() -> None:
     provider = analysis_provider_from_environment(
-        {"MODEL_PROVIDER": "deepseek", "MODEL_API_KEY": "test-secret"}
+        {
+            "MODEL_PROVIDER": "deepseek",
+            "MODEL_API_KEY": "test-secret",
+            "MODEL_DATA_RETENTION_DISABLED": "true",
+        }
     )
     output = {
         "metrics": [
@@ -114,7 +126,11 @@ def test_deepseek_drops_invalid_single_operand_calculation() -> None:
 
 def test_deepseek_canonicalizes_metric_to_exact_source_number() -> None:
     provider = analysis_provider_from_environment(
-        {"MODEL_PROVIDER": "deepseek", "MODEL_API_KEY": "test-secret"}
+        {
+            "MODEL_PROVIDER": "deepseek",
+            "MODEL_API_KEY": "test-secret",
+            "MODEL_DATA_RETENTION_DISABLED": "true",
+        }
     )
     request = build_analysis_request(source_document())
     output = valid_analysis()

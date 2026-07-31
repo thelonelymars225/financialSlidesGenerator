@@ -17,6 +17,7 @@ export type GenerationJob = {
   id: string;
   extraction_job_id: string;
   deck_type: DeckPurpose;
+  slide_count: number;
   status: GenerationStatus;
   progress: number;
   attempt_count: number;

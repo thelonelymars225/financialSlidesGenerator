@@ -21,7 +21,10 @@ from financial_slides_api.infrastructure.node_renderer import (
 from financial_slides_api.infrastructure.sqlite_jobs import SQLiteJobStore
 from financial_slides_api.main import app
 from financial_slides_api.services.analysis import FinancialAnalysisService
-from financial_slides_api.services.generation import SlideGenerationService
+from financial_slides_api.services.generation import (
+    SlideGenerationService,
+    _analysis_provider_for_generation,
+)
 from financial_slides_api.services.jobs import ExtractionJobService
 from financial_slides_api.worker import ExtractionJobWorker
 
@@ -31,6 +34,17 @@ SLIDE_EXAMPLE = ROOT / "packages/contracts/examples/slide-spec-v0.1.json"
 ANALYSIS_EXAMPLE = ROOT / "packages/contracts/examples/analysis-v0.2.json"
 PREFLIGHT_CLI = ROOT / "packages/presentation-harness/scripts/preflight-deck.mjs"
 OWNER_HEADERS = {"X-Owner-ID": "integration-owner"}
+
+
+def test_generation_fails_closed_to_deterministic_without_retention_assertion() -> None:
+    provider = _analysis_provider_for_generation(
+        {
+            "MODEL_PROVIDER": "deepseek",
+            "MODEL_API_KEY": "test-secret",
+        }
+    )
+
+    assert provider.name == "deterministic"
 
 
 class RecordingRenderer:
@@ -147,6 +161,7 @@ def test_extracted_document_to_preview_and_powerpoint_download(tmp_path) -> None
         )
         assert started.status_code == 202
         generation_job = started.json()
+        assert generation_job["slide_count"] == 8
 
         status = client.get(
             f"/api/slide-jobs/{generation_job['id']}",
@@ -166,6 +181,7 @@ def test_extracted_document_to_preview_and_powerpoint_download(tmp_path) -> None
         Draft202012Validator(json.loads(SLIDE_SCHEMA.read_text(encoding="utf-8"))).validate(
             result.json()["slide_spec"]
         )
+        assert len(result.json()["slide_spec"]["slides"]) == 8
         assert (
             result.json()["slide_spec"]["slides"][1]["components"][0]["value"]["displayedValue"]
             == "$12.4 million"

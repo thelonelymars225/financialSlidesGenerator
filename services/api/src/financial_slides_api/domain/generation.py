@@ -27,6 +27,7 @@ class GenerationJob:
     extraction_job_id: str
     owner_id: str
     deck_type: str
+    slide_count: int
     status: GenerationStatus
     progress: int
     attempt_count: int
