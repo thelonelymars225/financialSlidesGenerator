@@ -8,7 +8,7 @@
     "pnpm": ">=11"
   },
   "scripts": {
-    "dev": "concurrently -n api,worker,web -c blue,magenta,green \"pnpm dev:api\" \"pnpm dev:worker\" \"pnpm dev:web\"",
+    "dev": "concurrently -n api,web -c blue,green \"pnpm dev:api\" \"pnpm dev:web\"",
     "dev:api": "uv run --package financial-slides-api uvicorn financial_slides_api.main:app --reload --port 8000",
     "dev:worker": "uv run --package financial-slides-api python -m financial_slides_api.worker --watch --limit 4",
     "dev:web": "pnpm --filter @financial-slides/web dev",

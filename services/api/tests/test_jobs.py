@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 
-from financial_slides_api.controllers.jobs import service_dependency
+from financial_slides_api.controllers.jobs import service_dependency, worker_dependency
 from financial_slides_api.domain.jobs import (
     CreateJobCommand,
     JobConflictError,
@@ -287,6 +287,38 @@ def test_api_submit_poll_result_and_typed_failure(tmp_path) -> None:
             ).status_code
             == 409
         )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_api_automatically_processes_job_in_background(tmp_path) -> None:
+    clock = MutableClock()
+    service, store = service_and_store(tmp_path, clock)
+    worker = ExtractionJobWorker(store, SuccessfulExtraction(), clock=clock)
+    app.dependency_overrides[service_dependency] = lambda: service
+    app.dependency_overrides[worker_dependency] = lambda: worker
+    client = TestClient(app)
+    try:
+        submitted = client.post(
+            "/api/jobs",
+            headers={"X-Owner-ID": "automatic-owner"},
+            json={
+                "input_mode": "text",
+                "source_text": "Revenue increased by 14%.",
+                "deck_purpose": "management-review",
+                "slide_count": 8,
+                "request_key": "automatic-processing",
+            },
+        )
+
+        assert submitted.status_code == 202
+        job_id = submitted.json()["id"]
+        result = client.get(
+            f"/api/jobs/{job_id}/result",
+            headers={"X-Owner-ID": "automatic-owner"},
+        )
+        assert result.status_code == 200
+        assert result.json()["job"]["status"] == "succeeded"
     finally:
         app.dependency_overrides.clear()
 
