@@ -1,0 +1,24 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.api"
+watchPatterns = [
+  "Dockerfile.api",
+  "deploy/railway-api.toml",
+  "pyproject.toml",
+  "uv.lock",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "services/api/**",
+  "services/worker/**",
+  "packages/contracts/**",
+  "packages/presentation-harness/**",
+  "packages/presentation-renderer/**",
+]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+drainingSeconds = "10"

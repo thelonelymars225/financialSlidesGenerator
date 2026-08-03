@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:22.16.0-bookworm-slim AS node-dependencies
+WORKDIR /app
+RUN corepack enable
+COPY . .
+RUN pnpm install --frozen-lockfile --prod
+
+FROM ghcr.io/astral-sh/uv:0.8.14 AS uv
+
+FROM python:3.12.11-slim-bookworm AS runtime
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    FINANCIAL_SLIDES_REPOSITORY_ROOT=/app \
+    PATH="/app/.venv/bin:$PATH"
+WORKDIR /app
+
+COPY --from=uv /uv /uvx /usr/local/bin/
+COPY --from=node-dependencies /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-dependencies /app /app
+RUN uv sync --frozen --no-dev --package financial-slides-api \
+    && groupadd --system app \
+    && useradd --system --gid app --home-dir /app app \
+    && chown -R app:app /app
+
+USER app
+EXPOSE 8000
+CMD ["sh", "-c", "exec uvicorn financial_slides_api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

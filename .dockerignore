@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+.data
+.pytest_cache
+.ruff_cache
+.pnpm-store
+**/__pycache__
+**/*.pyc
+**/node_modules
+**/test
+**/tests
+artifacts
+docs
