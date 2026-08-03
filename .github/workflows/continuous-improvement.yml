@@ -58,3 +58,9 @@ jobs:
 
       - name: Build frontend
         run: pnpm build
+
+      - name: Build API container
+        run: docker build --file Dockerfile.api --tag financial-slides-api:test .
+
+      - name: Build worker container
+        run: docker build --file Dockerfile.worker --tag financial-slides-worker:test .

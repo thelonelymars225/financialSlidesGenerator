@@ -1,4 +1,5 @@
 import type { CreateJobRequest, ExtractionJob, JobResult } from "./types";
+import { apiUrl } from "../../api-url";
 
 export class ExtractionApiError extends Error {
   constructor(
@@ -36,7 +37,7 @@ function ownerHeaders(ownerId: string): HeadersInit {
 export function createExtractionApi(fetcher: Fetcher = fetch, ownerId = "local-development") {
   return {
     async createJob(payload: CreateJobRequest): Promise<ExtractionJob> {
-      const response = await fetcher("/api/jobs", {
+      const response = await fetcher(apiUrl("/api/jobs"), {
         method: "POST",
         headers: { "content-type": "application/json", ...ownerHeaders(ownerId) },
         body: JSON.stringify(payload),
@@ -45,21 +46,21 @@ export function createExtractionApi(fetcher: Fetcher = fetch, ownerId = "local-d
     },
 
     async getJob(jobId: string): Promise<ExtractionJob> {
-      const response = await fetcher(`/api/jobs/${encodeURIComponent(jobId)}`, {
+      const response = await fetcher(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`), {
         headers: ownerHeaders(ownerId),
       });
       return parseResponse<ExtractionJob>(response);
     },
 
     async getResult(jobId: string): Promise<JobResult> {
-      const response = await fetcher(`/api/jobs/${encodeURIComponent(jobId)}/result`, {
+      const response = await fetcher(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/result`), {
         headers: ownerHeaders(ownerId),
       });
       return parseResponse<JobResult>(response);
     },
 
     async cancelJob(jobId: string): Promise<ExtractionJob> {
-      const response = await fetcher(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      const response = await fetcher(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/cancel`), {
         method: "POST",
         headers: ownerHeaders(ownerId),
       });

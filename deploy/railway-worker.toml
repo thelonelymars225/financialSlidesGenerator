@@ -1,0 +1,17 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.worker"
+watchPatterns = [
+  "Dockerfile.worker",
+  "deploy/railway-worker.toml",
+  "pyproject.toml",
+  "uv.lock",
+  "services/api/**",
+  "services/worker/**",
+  "packages/contracts/**",
+]
+
+[deploy]
+restartPolicyType = "ALWAYS"
+restartPolicyMaxRetries = 10
+drainingSeconds = "10"

@@ -1,5 +1,6 @@
 import type { DeckPurpose } from "../extraction/types";
 import type { GenerationJob, GenerationResult } from "./types";
+import { apiUrl } from "../../api-url";
 
 export class GenerationApiError extends Error {
   constructor(
@@ -29,7 +30,7 @@ function ownerHeaders(ownerId: string): HeadersInit {
 export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-development") {
   return {
     async start(extractionJobId: string, deckType: DeckPurpose): Promise<GenerationJob> {
-      const response = await fetcher(`/api/jobs/${encodeURIComponent(extractionJobId)}/slides`, {
+      const response = await fetcher(apiUrl(`/api/jobs/${encodeURIComponent(extractionJobId)}/slides`), {
         method: "POST",
         headers: { "content-type": "application/json", ...ownerHeaders(ownerId) },
         body: JSON.stringify({ deck_type: deckType }),
@@ -38,21 +39,21 @@ export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-d
     },
 
     async getJob(jobId: string): Promise<GenerationJob> {
-      const response = await fetcher(`/api/slide-jobs/${encodeURIComponent(jobId)}`, {
+      const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}`), {
         headers: ownerHeaders(ownerId),
       });
       return parseResponse<GenerationJob>(response);
     },
 
     async getResult(jobId: string): Promise<GenerationResult> {
-      const response = await fetcher(`/api/slide-jobs/${encodeURIComponent(jobId)}/result`, {
+      const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/result`), {
         headers: ownerHeaders(ownerId),
       });
       return parseResponse<GenerationResult>(response);
     },
 
     async retry(jobId: string): Promise<GenerationJob> {
-      const response = await fetcher(`/api/slide-jobs/${encodeURIComponent(jobId)}/retry`, {
+      const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/retry`), {
         method: "POST",
         headers: ownerHeaders(ownerId),
       });
@@ -60,7 +61,7 @@ export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-d
     },
 
     async download(jobId: string): Promise<Blob> {
-      const response = await fetcher(`/api/slide-jobs/${encodeURIComponent(jobId)}/artifact`, {
+      const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/artifact`), {
         headers: ownerHeaders(ownerId),
       });
       if (!response.ok) await parseResponse(response);

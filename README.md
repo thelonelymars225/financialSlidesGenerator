@@ -25,6 +25,7 @@ docs/                          BRD, architecture, and decision records
 ```
 
 See [docs/architecture.md](docs/architecture.md) for why these boundaries exist.
+Cloud hosting instructions live in [docs/deployment.md](docs/deployment.md).
 
 ## Prerequisites
 
