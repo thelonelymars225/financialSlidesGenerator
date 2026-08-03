@@ -1,5 +1,9 @@
 # Extraction worker runtime
 
+> The current Railway demo does not use this separate durable-worker profile.
+> The API schedules extraction in-process and uses memory-only state. Keep this
+> document for the later return to restart-safe persistence.
+
 The API only validates and enqueues extraction jobs. A separate worker process
 must use the same durable job store and continuously claim queued work.
 
@@ -28,8 +32,9 @@ existing protection against duplicate processing when multiple workers run.
 The process manager should restart a worker that exits unexpectedly. Provider
 keys and database credentials remain server-side environment variables.
 
-For local development, `pnpm dev` starts the API, continuous worker, and web
-application together. `pnpm dev:worker` starts only the continuous worker.
+For the current memory-only demo, `pnpm dev` starts the API and web application;
+the API processes extraction in the background. `pnpm dev:worker` remains
+available only for an explicitly configured durable store.
 
 ## One-shot operation
 

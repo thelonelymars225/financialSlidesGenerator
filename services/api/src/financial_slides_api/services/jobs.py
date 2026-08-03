@@ -20,6 +20,7 @@ from financial_slides_api.domain.jobs import (
     request_cancel,
 )
 from financial_slides_api.infrastructure.audit import MetadataAuditLogger, NullAuditSink
+from financial_slides_api.infrastructure.memory_jobs import InMemoryJobStore
 from financial_slides_api.infrastructure.sqlite_jobs import SQLiteJobStore
 from financial_slides_api.ports.jobs import JobRepository, JobStore, ResultStore, SourceStore
 from financial_slides_api.ports.privacy import AuditSink, RetentionStore
@@ -163,7 +164,9 @@ class ExtractionJobService:
 
 def configured_job_store() -> JobStore:
     database_url = os.getenv("DATABASE_URL", "")
-    adapter = os.getenv("FINANCIAL_SLIDES_STORE") or ("postgres" if database_url else "sqlite")
+    adapter = os.getenv("FINANCIAL_SLIDES_STORE", "memory")
+    if adapter == "memory":
+        return InMemoryJobStore()
     if adapter == "sqlite":
         configured = os.getenv("FINANCIAL_SLIDES_JOB_DB", ".data/extraction-jobs.sqlite3")
         return SQLiteJobStore(Path(configured))

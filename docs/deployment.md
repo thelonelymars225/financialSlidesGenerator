@@ -1,39 +1,35 @@
 # Cloud deployment
 
-The monorepo deploys as three independent processes without copying source code:
+The demo deploys as two services from one repository:
 
 - Cloudflare Pages builds `apps/web`.
-- Railway runs the FastAPI service using `Dockerfile.api`.
-- Railway runs the continuous extraction worker using `Dockerfile.worker`.
-- Both Railway services use the existing Supabase database and private buckets.
+- Railway runs the self-contained FastAPI service using `Dockerfile.api`.
+- Extraction is scheduled as an in-process background task after submission.
+
+The demo runtime keeps extraction and generation jobs in memory. It has no
+Supabase/PostgreSQL dependency, and its jobs disappear whenever Railway restarts
+or redeploys. Restore a durable adapter before using this with customer data.
 
 ## Railway
 
-Create an empty Railway project, then add two services sourced from this GitHub
-repository and the release branch. Leave the root directory at `/` because the
+Create one Railway service sourced from this GitHub repository and the release
+branch. Leave the root directory at `/` because the
 Python packages and Node presentation packages share root lockfiles.
 
 | Service | Config file | Public domain |
 | --- | --- | --- |
 | `financial-slides-api` | `/deploy/railway-api.toml` | Generate one |
-| `financial-slides-worker` | `/deploy/railway-worker.toml` | None |
-
-Share the persistence variables between both services:
+Do not set `DATABASE_URL`, `SUPABASE_URL`, or `SUPABASE_SECRET_KEY` for this
+runtime. Remove `FINANCIAL_SLIDES_STORE`, or set it to `memory` explicitly.
 
 ```dotenv
 APP_ENV=production
-FINANCIAL_SLIDES_STORE=postgres
-DATABASE_URL=<Supabase session-pooler connection string>
-SUPABASE_URL=<project URL>
-SUPABASE_SECRET_KEY=<server-only secret key>
-SUPABASE_SOURCE_BUCKET=source-documents
-SUPABASE_PRESENTATION_BUCKET=generated-presentations
+FINANCIAL_SLIDES_STORE=memory
 FINANCIAL_SLIDES_SOURCE_RETENTION_HOURS=24
 FINANCIAL_SLIDES_ARTIFACT_RETENTION_HOURS=24
 ```
 
-Set the hosted-model variables on the API service only. The extraction worker
-does not call the analysis model:
+Set the hosted-model variables on the API service:
 
 ```dotenv
 MODEL_PROVIDER=deepseek
@@ -41,9 +37,8 @@ MODEL_API_KEY=<server-only provider key>
 MODEL_DATA_RETENTION_DISABLED=true
 ```
 
-Use the Supabase session pooler on port 5432 unless the Railway deployment is
-confirmed to reach the direct IPv6 endpoint. Never commit these values or copy
-`SUPABASE_SECRET_KEY` into the frontend service.
+The separate Railway worker service and Supabase variables are intentionally
+unused in this demo profile.
 
 ## Cloudflare Pages
 
@@ -69,7 +64,6 @@ persist generation jobs and presentation artifacts outside API process memory.
 
 1. Confirm `GET https://<api-domain>/health` returns HTTP 200.
 2. Open the Pages URL and submit safe pasted text.
-3. Confirm the worker changes the extraction job from queued to succeeded.
+3. Confirm the in-process worker changes the extraction job from queued to succeeded.
 4. Generate and download a PowerPoint file.
-5. Restart the worker and confirm a new job is still processed.
-6. Delete the test source and generated artifact.
+5. Delete the test source and generated artifact.

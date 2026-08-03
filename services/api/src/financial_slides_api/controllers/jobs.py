@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Response, status
 
 from financial_slides_api.domain.jobs import (
     JobConflictError,
@@ -16,7 +16,8 @@ from financial_slides_api.schemas.jobs import (
     JobResponse,
     JobResultResponse,
 )
-from financial_slides_api.services.jobs import ExtractionJobService, get_job_service
+from financial_slides_api.services.jobs import ExtractionJobService, get_job_service, get_job_store
+from financial_slides_api.worker import ExtractionJobWorker
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -30,16 +31,26 @@ def service_dependency() -> ExtractionJobService:
 JobService = Annotated[ExtractionJobService, Depends(service_dependency)]
 
 
+def worker_dependency() -> ExtractionJobWorker:
+    return ExtractionJobWorker(get_job_store())
+
+
+JobWorker = Annotated[ExtractionJobWorker, Depends(worker_dependency)]
+
+
 @router.post("", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
 def create_job(
     request: CreateJobRequest,
+    background: BackgroundTasks,
     service: JobService,
+    worker: JobWorker,
     owner_id: OwnerId = "local-development",
 ) -> JobResponse:
     try:
         job = service.create(request.to_command(owner_id))
     except JobConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    background.add_task(worker.run_available, 1)
     return JobResponse.from_job(job)
 
 
