@@ -14,4 +14,4 @@ watchPatterns = [
 [deploy]
 restartPolicyType = "ALWAYS"
 restartPolicyMaxRetries = 10
-drainingSeconds = "10"
+drainingSeconds = 10
