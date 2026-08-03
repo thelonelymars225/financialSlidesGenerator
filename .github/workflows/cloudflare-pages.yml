@@ -81,7 +81,9 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           packageManager: pnpm
-          command: pages deploy apps/web/dist --project-name=financial-slides-generator --branch=dev
+          wranglerVersion: "4.118.0"
+          workingDirectory: apps/web
+          command: pages deploy dist --project-name=financial-slides-generator --branch=dev
 
       - name: Record deployment URL
         env:
