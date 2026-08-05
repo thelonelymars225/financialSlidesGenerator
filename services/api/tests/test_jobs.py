@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
-from referencing import Registry, Resource
 
 from financial_slides_api.controllers.jobs import service_dependency, worker_dependency
 from financial_slides_api.domain.jobs import (
@@ -30,23 +29,9 @@ from financial_slides_worker import (
 REPOSITORY_ROOT = Path(__file__).parents[3]
 INTEGRATION_FIXTURE = REPOSITORY_ROOT / "fixtures/integration/extraction-api-v0.1.json"
 PDF_FIXTURE = REPOSITORY_ROOT / "services/worker/tests/fixtures/native-financial-report.pdf.b64"
-EXTRACTED_DOCUMENT_SCHEMA_V01 = (
+EXTRACTED_DOCUMENT_SCHEMA = (
     REPOSITORY_ROOT / "packages/contracts/schemas/extracted-document-v0.1.schema.json"
 )
-EXTRACTED_DOCUMENT_SCHEMA_V02 = (
-    REPOSITORY_ROOT / "packages/contracts/schemas/extracted-document-v0.2.schema.json"
-)
-
-
-def validate_extracted_document(document: dict[str, object]) -> None:
-    v01 = json.loads(EXTRACTED_DOCUMENT_SCHEMA_V01.read_text(encoding="utf-8"))
-    schema = (
-        json.loads(EXTRACTED_DOCUMENT_SCHEMA_V02.read_text(encoding="utf-8"))
-        if document.get("schemaVersion") == "0.2"
-        else v01
-    )
-    registry = Registry().with_resource(v01["$id"], Resource.from_contents(v01))
-    Draft202012Validator(schema, registry=registry).validate(document)
 
 
 @dataclass
@@ -146,8 +131,7 @@ def test_job_survives_restart_and_worker_emits_canonical_result(tmp_path) -> Non
     assert finished.attempt_count == 1
     assert finished.telemetry.route == "pasted_text"
     assert finished.telemetry.external_cost_usd == 0
-    assert document["schemaVersion"] == "0.2"
-    assert document["financialFacts"][0]["normalizedValue"] == 12_400_000
+    assert document["schemaVersion"] == "0.1"
     assert document["source"]["inputType"] == "text"
     assert document["pages"][0]["blocks"][0]["text"].startswith("Revenue")
 
@@ -407,7 +391,9 @@ def test_real_api_queue_worker_result_vertical_slice_for_text_and_pdf(tmp_path) 
             assert status.json()["status"] == "succeeded"
             assert status.json()["telemetry"]["route"] == route
             assert result.status_code == 200
-            validate_extracted_document(result.json()["document"])
+            Draft202012Validator(
+                json.loads(EXTRACTED_DOCUMENT_SCHEMA.read_text(encoding="utf-8"))
+            ).validate(result.json()["document"])
 
             if route == "native_pdf":
                 page = result.json()["document"]["pages"][0]
@@ -423,6 +409,8 @@ def test_shared_frontend_fixture_matches_backend_response_models_and_contract() 
 
     JobResultResponse.model_validate(fixture["successful_result"])
     JobResponse.model_validate(fixture["failed_job"])
-    validate_extracted_document(fixture["successful_result"]["document"])
+    Draft202012Validator(
+        json.loads(EXTRACTED_DOCUMENT_SCHEMA.read_text(encoding="utf-8"))
+    ).validate(fixture["successful_result"]["document"])
     encoded_pdf = "".join(PDF_FIXTURE.read_text(encoding="ascii").split())
     assert b64decode(encoded_pdf, validate=True).startswith(b"%PDF")

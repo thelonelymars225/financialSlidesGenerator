@@ -179,8 +179,7 @@ def test_pasted_text_emits_canonical_contract_with_zero_external_cost(
         TextSource(text="Revenue increased to $12.4 million.")
     )
 
-    assert result.document["schemaVersion"] == "0.2"
-    assert result.document["financialFacts"][0]["normalizedValue"] == 12_400_000
+    assert result.document["schemaVersion"] == "0.1"
     assert result.document["source"]["inputType"] == "text"
     assert result.document["pages"][0]["blocks"][0]["text"].startswith("Revenue")
     assert result.telemetry.route == "pasted_text"

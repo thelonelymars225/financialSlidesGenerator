@@ -27,9 +27,8 @@ preflight, rendering, and bounded repair. Queue technology remains undecided.
 Native extraction currently routes pasted text and signature-verified,
 born-digital PDFs through replaceable local parser adapters. Scanned and
 low-text PDF pages use bounded local Tesseract OCR with confidence-based review
-warnings. Every route preserves the raw v0.1 pages, then a deterministic finance enrichment step
-emits Extracted Document v0.2 plus separate duration, route, and external-cost telemetry. Optional
-document-API and VLM adapters
+warnings. Every route emits Extracted Document v0.1 plus separate duration,
+route, and external-cost telemetry. Optional document-API and VLM adapters
 receive only explicitly selected low-confidence or visual pages, enforce shared
 budgets, and must return the same canonical contract.
 
@@ -60,7 +59,7 @@ claims. No real confidential company reports belong here.
 
 ```text
 web -> API -> job queue -> worker
-                         |-> extract raw blocks, enrich to Extracted Document v0.2
+                         |-> extract to Extracted Document v0.1
                          |-> retrieve source sections with preserved provenance
                          |-> create and validate Analysis v0.1
                          |-> compile a renderer-neutral DeckSpec
@@ -93,17 +92,6 @@ web -> API -> job queue -> worker
 - Provider fallback is page-level and opt-in. It requires an explicit routing
   reason, disabled provider retention, contract-valid page evidence, bounded
   attempts/time/tokens/cost, and preservation of reliable financial values.
-
-## Finance-aware extraction boundary
-
-- Raw provider output remains intact; canonical facts are additive and independently traceable.
-- Numeric parsing, signs, percentage conversion, currency and scale normalization, period dates,
-  header paths, scenarios, restatements, and scope classification are deterministic.
-- Each fact records confidence by field. Missing or ambiguous context remains null and produces an
-  explicit validation finding instead of a guessed value.
-- Repeated facts are linked, conflicting values are preserved, and table totals are checked without
-  creating derived analytical metrics.
-- Extracted Document v0.1 remains readable during migration; new worker results use v0.2.
 
 ## Durable extraction-job boundary
 

@@ -20,45 +20,6 @@ for (const exampleName of [
   });
 }
 
-test("finance-aware v0.2 satisfies the extracted-document contract", async () => {
-  const result = await validateContract(
-    "extractedDocument",
-    await readExample("extracted-document-financial-v0.2.json"),
-  );
-  assert.deepEqual(result, { valid: true, errors: [] });
-});
-
-test("rejects unsupported extracted-document versions", async () => {
-  const document = await readExample("extracted-document-financial-v0.2.json");
-  document.schemaVersion = "0.3";
-
-  const result = await validateContract("extractedDocument", document);
-  assert.equal(result.valid, false);
-  assert.match(result.errors.join("\n"), /unsupported extractedDocument contract version/);
-});
-
-test("checks financial normalization and evidence lineage", async () => {
-  const document = await readExample("extracted-document-financial-v0.2.json");
-  document.financialFacts[0].normalizedValue = 18;
-  document.financialFacts[0].evidence.blockId = "missing-block";
-
-  const result = await validateContract("extractedDocument", document);
-  assert.equal(result.valid, false);
-  assert.match(result.errors.join("\n"), /normalizedValue must equal parsedValue/);
-  assert.match(result.errors.join("\n"), /references unknown block/);
-});
-
-test("requires ambiguity to be explicit and reviewable", async () => {
-  const document = await readExample("extracted-document-financial-v0.2.json");
-  const fact = document.financialFacts[0];
-  fact.period = { type: "unknown", label: null, startDate: null, endDate: null };
-  fact.confidence.period = 0;
-
-  const result = await validateContract("extractedDocument", document);
-  assert.equal(result.valid, false);
-  assert.match(result.errors.join("\n"), /must flag period.missing/);
-});
-
 test("rejects an incomplete block without provenance", async () => {
   const document = await readExample("extracted-document-text-v0.1.json");
   delete document.pages[0].blocks[0].source;

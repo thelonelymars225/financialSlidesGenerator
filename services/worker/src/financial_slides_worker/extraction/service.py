@@ -8,7 +8,6 @@ from financial_slides_worker.extraction.errors import (
     ExtractionLimitError,
     UnsupportedFileError,
 )
-from financial_slides_worker.extraction.finance import enrich_financial_facts
 from financial_slides_worker.extraction.models import (
     ExtractionContext,
     ExtractionLimits,
@@ -47,7 +46,7 @@ class ExtractionService:
             )
 
         started = self._clock()
-        document = enrich_financial_facts(extract_pasted_text(source.text))
+        document = extract_pasted_text(source.text)
         return ExtractionResult(
             document=document,
             telemetry=ExtractionTelemetry(
@@ -70,7 +69,6 @@ class ExtractionService:
         )
         document = extractor.extract(source, context)
         context.ensure_time_remaining()
-        document = enrich_financial_facts(document)
         return ExtractionResult(
             document=document,
             telemetry=ExtractionTelemetry(

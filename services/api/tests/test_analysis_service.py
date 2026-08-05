@@ -19,9 +19,6 @@ from financial_slides_api.services.analysis import build_analysis_request
 
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE = ROOT / "packages" / "contracts" / "examples" / "extracted-document-text-v0.1.json"
-FINANCIAL_EXAMPLE = (
-    ROOT / "packages" / "contracts" / "examples" / "extracted-document-financial-v0.2.json"
-)
 
 
 def source_document() -> dict:
@@ -83,15 +80,6 @@ def test_deterministic_provider_returns_grounded_valid_analysis() -> None:
     assert result.telemetry.provider_calls == 1
     assert result.telemetry.repair_attempts == 0
     assert result.telemetry.external_cost_usd == 0
-
-
-def test_analysis_boundary_accepts_finance_aware_extraction_v02() -> None:
-    document = json.loads(FINANCIAL_EXAMPLE.read_text(encoding="utf-8"))
-
-    result = run_analysis(FinancialAnalysisService(DeterministicAnalysisProvider()), document)
-
-    assert result.analysis["sourceDocumentIds"] == ["document-financial-001"]
-    assert result.analysis["metrics"][0]["normalizedValue"] == 0.18
 
 
 def test_plain_extracted_text_gets_a_bounded_numeric_fallback() -> None:
