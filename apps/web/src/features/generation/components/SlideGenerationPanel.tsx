@@ -6,17 +6,27 @@ import {
 } from "../state";
 import { useSlideGeneration } from "../hooks/useSlideGeneration";
 import { SlidePreview } from "./SlidePreview";
+import {
+  normalizePresentationDensity,
+  type PresentationDensity,
+} from "../density";
 
 export function SlideGenerationPanel({
   extractionJobId,
   deckType,
+  density,
 }: {
   extractionJobId: string;
   deckType: DeckPurpose;
+  density: PresentationDensity;
 }) {
   const generation = useSlideGeneration();
   const job = generation.job.data;
-  const automaticRequestKey = automaticGenerationRequestKey(extractionJobId, deckType);
+  const automaticRequestKey = automaticGenerationRequestKey(
+    extractionJobId,
+    deckType,
+    density,
+  );
   const analysis = job?.analysis ?? generation.result.data?.job.analysis;
 
   useEffect(() => {
@@ -25,12 +35,13 @@ export function SlideGenerationPanel({
         extractionJobId,
         deckType,
         requestKey: automaticRequestKey,
+        density,
       });
     }
-  }, [automaticRequestKey, deckType, extractionJobId, generation.start.status, job]);
+  }, [automaticRequestKey, deckType, density, extractionJobId, generation.start.status, job]);
 
   function startAgain(requestKey: string) {
-    generation.start.mutate({ extractionJobId, deckType, requestKey });
+    generation.start.mutate({ extractionJobId, deckType, requestKey, density });
   }
 
   async function download() {
@@ -84,6 +95,9 @@ export function SlideGenerationPanel({
       {job?.status === "succeeded" && (
         <div className="mb-4 text-sm" role="status">
           <strong>Ready</strong>
+          <p className="mt-1 text-stone-600 dark:text-stone-300">
+            Presentation detail: {normalizePresentationDensity(job.density)}
+          </p>
           {analysis && (
             <p className="mt-1 text-stone-600 dark:text-stone-300">
               {analysis.mode === "hosted"

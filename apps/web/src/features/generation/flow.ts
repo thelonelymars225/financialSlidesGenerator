@@ -1,6 +1,10 @@
 import type { GenerationApi } from "./api";
 import { automaticGenerationRequestKey, isTerminalGeneration } from "./state";
 import type { GenerationJob, GenerationResult } from "./types";
+import {
+  DEFAULT_PRESENTATION_DENSITY,
+  type PresentationDensity,
+} from "./density";
 
 type Wait = (milliseconds: number) => Promise<void>;
 
@@ -25,14 +29,18 @@ export async function generatePollAndLoad(
   api: GenerationApi,
   extractionJobId: string,
   deckType: Parameters<GenerationApi["start"]>[1],
-  options: Parameters<typeof waitForGeneration>[2] = {},
+  options: Parameters<typeof waitForGeneration>[2] & {
+    density?: PresentationDensity;
+  } = {},
 ): Promise<{ job: GenerationJob; result?: GenerationResult }> {
+  const { density = DEFAULT_PRESENTATION_DENSITY, ...pollingOptions } = options;
   const created = await api.start(
     extractionJobId,
     deckType,
-    automaticGenerationRequestKey(extractionJobId, deckType),
+    automaticGenerationRequestKey(extractionJobId, deckType, density),
+    density,
   );
-  const job = await waitForGeneration(api, created.id, options);
+  const job = await waitForGeneration(api, created.id, pollingOptions);
   return job.status === "succeeded"
     ? { job, result: await api.getResult(job.id) }
     : { job };

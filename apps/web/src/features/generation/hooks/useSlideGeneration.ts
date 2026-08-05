@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { DeckPurpose } from "../../extraction/types";
 import { generationApi } from "../api";
+import type { PresentationDensity } from "../density";
 import { generationPollInterval } from "../state";
 
 export function useSlideGeneration() {
@@ -13,11 +14,13 @@ export function useSlideGeneration() {
       extractionJobId,
       deckType,
       requestKey,
+      density,
     }: {
       extractionJobId: string;
       deckType: DeckPurpose;
       requestKey: string;
-    }) => generationApi.start(extractionJobId, deckType, requestKey),
+      density: PresentationDensity;
+    }) => generationApi.start(extractionJobId, deckType, requestKey, density),
     onSuccess: (job) => setJobId(job.id),
   });
 

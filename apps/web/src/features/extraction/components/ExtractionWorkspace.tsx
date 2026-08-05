@@ -1,5 +1,10 @@
 import { FormEvent, useMemo, useState } from "react";
 import { SlideGenerationPanel } from "../../generation/components/SlideGenerationPanel";
+import { PresentationDensitySelector } from "../../generation/components/PresentationDensitySelector";
+import {
+  DEFAULT_PRESENTATION_DENSITY,
+  type PresentationDensity,
+} from "../../generation/density";
 import { ExtractionApiError } from "../api";
 import { fileRequest } from "../file";
 import { useExtractionJob } from "../hooks/useExtractionJob";
@@ -17,6 +22,9 @@ export function ExtractionWorkspace() {
   const [file, setFile] = useState<File | null>(null);
   const [deckPurpose, setDeckPurpose] = useState<DeckPurpose>("management-review");
   const [slideCount, setSlideCount] = useState(10);
+  const [presentationDensity, setPresentationDensity] = useState<PresentationDensity>(
+    DEFAULT_PRESENTATION_DENSITY,
+  );
   const [jobId, setJobId] = useState<string | null>(null);
   const [requestKey, setRequestKey] = useState(newRequestKey);
   const [lastRequest, setLastRequest] = useState<CreateJobRequest | null>(null);
@@ -138,6 +146,12 @@ export function ExtractionWorkspace() {
           </label>
         </div>
 
+        <PresentationDensitySelector
+          disabled={extraction.create.isPending}
+          onChange={setPresentationDensity}
+          value={presentationDensity}
+        />
+
         <button className="mt-6 w-full rounded-xl bg-orange-700 px-5 py-3.5 font-bold text-white transition hover:bg-orange-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-orange-600 dark:hover:bg-orange-500" disabled={extraction.create.isPending || (inputMode === "file" ? !file : !sourceText.trim())}>
           {extraction.create.isPending ? "Submitting…" : "Extract source"}
         </button>
@@ -161,6 +175,7 @@ export function ExtractionWorkspace() {
             key={extraction.result.data.job.id}
             extractionJobId={extraction.result.data.job.id}
             deckType={deckPurpose}
+            density={presentationDensity}
           />
         </>
       )}

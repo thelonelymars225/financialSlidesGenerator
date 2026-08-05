@@ -1,4 +1,8 @@
 import type { GenerationFailure, GenerationStatus } from "./types";
+import {
+  DEFAULT_PRESENTATION_DENSITY,
+  type PresentationDensity,
+} from "./density";
 
 export function isTerminalGeneration(status: GenerationStatus | undefined): boolean {
   return status === "succeeded" || status === "failed";
@@ -11,8 +15,9 @@ export function generationPollInterval(status: GenerationStatus | undefined): nu
 export function automaticGenerationRequestKey(
   extractionJobId: string,
   deckType: string,
+  density: PresentationDensity = DEFAULT_PRESENTATION_DENSITY,
 ): string {
-  return `auto:${extractionJobId}:${deckType}`;
+  return `auto:${extractionJobId}:${deckType}:${density}`;
 }
 
 export function generationFailureGuidance(
