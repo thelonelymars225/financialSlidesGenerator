@@ -11,6 +11,7 @@ from time import perf_counter
 from typing import Any
 
 from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
 
 from financial_slides_api.domain.analysis import (
     AnalysisError,
@@ -50,12 +51,28 @@ def _default_contracts_dir() -> Path:
     return Path(__file__).resolve().parents[5] / "packages" / "contracts" / "schemas"
 
 
-def _validator(schema_path: Path) -> Draft202012Validator:
+def _validator(
+    schema_path: Path,
+    *,
+    referenced_schema_paths: tuple[Path, ...] = (),
+) -> Draft202012Validator:
     try:
         schema = loads(schema_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise RuntimeError(f"unable to load contract schema: {schema_path.name}") from error
-    return Draft202012Validator(schema)
+    registry = Registry()
+    for referenced_path in referenced_schema_paths:
+        try:
+            referenced_schema = loads(referenced_path.read_text(encoding="utf-8"))
+            registry = registry.with_resource(
+                referenced_schema["$id"],
+                Resource.from_contents(referenced_schema),
+            )
+        except (KeyError, OSError, ValueError) as error:
+            raise RuntimeError(
+                f"unable to load referenced contract schema: {referenced_path.name}"
+            ) from error
+    return Draft202012Validator(schema, registry=registry)
 
 
 def _text_numbers(text: str) -> tuple[SourceNumber, ...]:
@@ -103,9 +120,7 @@ def _text_numbers(text: str) -> tuple[SourceNumber, ...]:
             value = float(match.group("number").replace(",", ""))
             if match.group("open") and match.group("close"):
                 value = -value
-            generic.append(
-                (match.span(), SourceNumber(displayed, value, None, None, None, period))
-            )
+            generic.append((match.span(), SourceNumber(displayed, value, None, None, None, period)))
         numbers.extend(number for _, number in sorted(typed + generic))
     return tuple(numbers)
 
@@ -295,7 +310,14 @@ class FinancialAnalysisService:
         if max_repair_attempts not in {0, 1}:
             raise ValueError("max_repair_attempts must be zero or one")
         schemas = contracts_dir or _default_contracts_dir()
-        self._source_validator = _validator(schemas / "extracted-document-v0.1.schema.json")
+        extracted_v01 = schemas / "extracted-document-v0.1.schema.json"
+        self._source_validators = {
+            "0.1": _validator(extracted_v01),
+            "0.2": _validator(
+                schemas / "extracted-document-v0.2.schema.json",
+                referenced_schema_paths=(extracted_v01,),
+            ),
+        }
         self._analysis_validator = _validator(schemas / "analysis-v0.2.schema.json")
         self._provider = provider
         self._fallback_provider = fallback_provider
@@ -311,11 +333,16 @@ class FinancialAnalysisService:
         slide_count: int = 8,
         is_cancelled: Callable[[], bool] = lambda: False,
     ) -> AnalysisResult:
-        source_errors = _schema_errors(self._source_validator, document)
+        source_validator = self._source_validators.get(str(document.get("schemaVersion")))
+        source_errors = (
+            _schema_errors(source_validator, document)
+            if source_validator
+            else ("<root>: unsupported extracted-document version",)
+        )
         if source_errors:
             raise AnalysisError(
                 AnalysisFailureCode.INVALID_SOURCE,
-                "source document does not satisfy extracted-document-v0.1",
+                "source document does not satisfy a supported extracted-document contract",
             )
 
         request = build_analysis_request(document, density, slide_count)
