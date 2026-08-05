@@ -50,3 +50,18 @@ For each application, verify:
 This boundary avoids browser-specific layout drift and keeps the conversion
 path deterministic. More HTML/CSS support should only be added for a concrete,
 tested layout requirement.
+
+## Default presentation theme
+
+The approved `theme-corporate-default` is defined once in
+`packages/presentation-harness/src/theme.js`. Both the constrained HTML
+preflight compiler and the PowerPoint renderer consume these tokens. The theme
+owns the safe font stack, semantic colors, typography scale, spacing, chart
+palette, table treatment, and source-note treatment.
+
+To adjust the default visual language, change the semantic token rather than
+editing each layout. Keep hexadecimal colors in six-character Office format,
+retain the Aptos/Arial-safe font stack, run the harness contrast tests, and
+regenerate the compatibility deck. A new selectable theme requires a separately
+approved theme ID and equivalent compiler, renderer, editability, and preflight
+coverage; arbitrary LLM-authored CSS is not accepted.

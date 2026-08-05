@@ -2,7 +2,25 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { compileDeckHtml, layoutRegistry } from "../src/index.js";
+import {
+  compileDeckHtml,
+  defaultPresentationTheme,
+  layoutRegistry,
+  resolvePresentationTheme,
+} from "../src/index.js";
+
+function luminance(hex) {
+  const channels = hex.match(/.{2}/g).map((value) => Number.parseInt(value, 16) / 255);
+  const linear = channels.map((value) =>
+    value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4,
+  );
+  return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+}
+
+function contrast(left, right) {
+  const [lighter, darker] = [luminance(left), luminance(right)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}
 
 async function fixture() {
   return JSON.parse(
@@ -25,6 +43,17 @@ test("registry constrains canvas, regions, typography, and components", () => {
   });
 });
 
+test("default theme is complete, immutable, and readable", () => {
+  assert.equal(resolvePresentationTheme().id, "theme-corporate-default");
+  assert.ok(Object.isFrozen(defaultPresentationTheme));
+  assert.ok(Object.isFrozen(defaultPresentationTheme.colors));
+  assert.match(defaultPresentationTheme.fonts.fallback, /Arial/);
+  assert.equal(defaultPresentationTheme.chart.palette.length, 5);
+  assert.ok(contrast(defaultPresentationTheme.colors.ink, defaultPresentationTheme.colors.canvas) >= 7);
+  assert.ok(contrast(defaultPresentationTheme.colors.accent, defaultPresentationTheme.colors.canvas) >= 4.5);
+  assert.throws(() => resolvePresentationTheme("generated-theme"), /Unknown presentation theme/);
+});
+
 test("compiles the complete fixture deck deterministically", async () => {
   const deck = await fixture();
   const first = compileDeckHtml(deck);
@@ -36,6 +65,8 @@ test("compiles the complete fixture deck deterministically", async () => {
   assert.match(first, /Revenue increased 24% quarter over quarter/);
   assert.match(first, /<table class="chart-data" data-chart-type="bar">/);
   assert.match(first, /Q2 2026/);
+  assert.match(first, /Sources: document-financial-report p\.1/);
+  assert.match(first, /--color|#0f766e|#17324d/);
   assert.doesNotMatch(first, /<script|javascript:/i);
 });
 

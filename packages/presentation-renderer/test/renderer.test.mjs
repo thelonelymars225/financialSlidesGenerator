@@ -46,6 +46,13 @@ test("renders editable text, table, chart, notes, and image OOXML", async () => 
   const archive = await JSZip.loadAsync(await readFile(outputPath));
   const files = Object.keys(archive.files);
   const slideXml = await archive.file("ppt/slides/slide3.xml").async("string");
+  const allSlideXml = (
+    await Promise.all(
+      files
+        .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+        .map((name) => archive.file(name).async("string")),
+    )
+  ).join("");
 
   assert.deepEqual(result, { outputPath, warnings: [] });
   assert.equal(files.filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name)).length, 5);
@@ -53,7 +60,24 @@ test("renders editable text, table, chart, notes, and image OOXML", async () => 
   assert.ok(files.some((name) => name.startsWith("ppt/media/image")));
   assert.match(slideXml, /Quarterly revenue/);
   assert.match(slideXml, /Q2 2026/);
+  assert.match(allSlideXml, /Sources:/);
+  assert.match(allSlideXml, /17324D/);
+  assert.match(allSlideXml, /0F766E/);
+  assert.match(allSlideXml, /F3F7F5/);
   assert.ok(files.some((name) => name.startsWith("ppt/notesSlides/notesSlide")));
+});
+
+test("rejects an unapproved theme instead of accepting arbitrary styling", async () => {
+  const deck = await exampleDeck();
+  deck.themeId = "model-authored-theme";
+
+  await assert.rejects(
+    () =>
+      new PresentationRenderer().render(deck, {
+        outputPath: resolve(tmpdir(), "unknown-theme.pptx"),
+      }),
+    /Unknown presentation theme/,
+  );
 });
 
 test("uses an editable bar fallback for waterfall charts", async () => {
