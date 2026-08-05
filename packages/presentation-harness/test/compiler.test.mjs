@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   compileDeckHtml,
+  densityPreflightPolicy,
   defaultPresentationTheme,
   layoutRegistry,
   resolvePresentationTheme,
@@ -62,12 +63,31 @@ test("compiles the complete fixture deck deterministically", async () => {
   assert.equal(first, second);
   assert.equal((first.match(/<section class="slide /g) ?? []).length, 4);
   assert.match(first, /data-deck-id="deck-q2-2026"/);
+  assert.match(first, /data-density-profile="balanced"/);
   assert.match(first, /Revenue increased 24% quarter over quarter/);
   assert.match(first, /<table class="chart-data" data-chart-type="bar">/);
   assert.match(first, /Q2 2026/);
   assert.match(first, /Sources: document-financial-report p\.1/);
   assert.match(first, /--color|#0f766e|#17324d/);
   assert.doesNotMatch(first, /<script|javascript:/i);
+});
+
+test("density constraints reach compilation and preflight", async () => {
+  const deck = await fixture();
+  assert.deepEqual(densityPreflightPolicy(deck), {
+    minFontSize: 16,
+    minSpacing: 4,
+    maxAutoFitPasses: 2,
+    maxRepairAttempts: 2,
+  });
+
+  const unknown = await fixture();
+  unknown.densityProfile = "maximum";
+  assert.throws(() => compileDeckHtml(unknown), /density contract/);
+
+  const overLimit = await fixture();
+  overLimit.densityConstraints.maxTableRows = 1;
+  assert.throws(() => compileDeckHtml(overLimit), /table-row limit/);
 });
 
 test("escapes plain content and rejects unsafe markup", async () => {

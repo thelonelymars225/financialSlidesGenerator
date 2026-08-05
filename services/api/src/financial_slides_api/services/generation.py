@@ -22,6 +22,12 @@ from financial_slides_api.domain.generation import (
     GenerationStatus,
     transition,
 )
+from financial_slides_api.domain.presentation import (
+    DensityConstraints,
+    PresentationDensity,
+    resolve_density_profile,
+    target_slide_count,
+)
 from financial_slides_api.infrastructure.audit import MetadataAuditLogger, NullAuditSink
 from financial_slides_api.infrastructure.deterministic_analysis import (
     DeterministicAnalysisProvider,
@@ -74,11 +80,16 @@ def _value(metric: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _speaker_notes(sources: list[dict[str, Any]]) -> str:
+def _speaker_notes(sources: list[dict[str, Any]], depth: str) -> str:
     citations = (
         f"{source['documentId']} p.{source['pageNumber']} {source['blockId']}" for source in sources
     )
-    return f"Sources: {'; '.join(citations)}"
+    notes = f"Sources: {'; '.join(citations)}"
+    if depth == "rich":
+        quotes = [source["quote"] for source in sources if source.get("quote")]
+        if quotes:
+            notes = f"{notes}\nEvidence: {' | '.join(quotes)[:600]}"
+    return notes
 
 
 def _trend_metrics(metrics: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -93,12 +104,16 @@ def _trend_metrics(metrics: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _metric_slide(intent: dict[str, Any], metric: dict[str, Any]) -> dict[str, Any]:
+def _metric_slide(
+    intent: dict[str, Any],
+    metric: dict[str, Any],
+    constraints: DensityConstraints,
+) -> dict[str, Any]:
     sources = _sources(metric["evidence"])
     return {
         "layoutId": "kpi-grid",
         "title": intent["title"],
-        "speakerNotes": _speaker_notes(sources),
+        "speakerNotes": _speaker_notes(sources, constraints.speaker_notes_depth),
         "components": [
             {
                 "id": f"component-{metric['id']}",
@@ -113,12 +128,17 @@ def _metric_slide(intent: dict[str, Any], metric: dict[str, Any]) -> dict[str, A
     }
 
 
-def _table_slide(intent: dict[str, Any], metrics: list[dict[str, Any]]) -> dict[str, Any]:
+def _table_slide(
+    intent: dict[str, Any],
+    metrics: list[dict[str, Any]],
+    constraints: DensityConstraints,
+) -> dict[str, Any]:
+    metrics = metrics[: constraints.max_table_rows]
     sources = _unique_sources(metrics)
     return {
         "layoutId": "financial-table",
         "title": f"{intent['title']} — data",
-        "speakerNotes": _speaker_notes(sources),
+        "speakerNotes": _speaker_notes(sources, constraints.speaker_notes_depth),
         "components": [
             {
                 "id": f"table-{intent['id']}",
@@ -138,12 +158,16 @@ def _table_slide(intent: dict[str, Any], metrics: list[dict[str, Any]]) -> dict[
     }
 
 
-def _chart_slide(intent: dict[str, Any], metrics: list[dict[str, Any]]) -> dict[str, Any]:
+def _chart_slide(
+    intent: dict[str, Any],
+    metrics: list[dict[str, Any]],
+    constraints: DensityConstraints,
+) -> dict[str, Any]:
     sources = _unique_sources(metrics)
     return {
         "layoutId": "chart",
         "title": intent["title"],
-        "speakerNotes": _speaker_notes(sources),
+        "speakerNotes": _speaker_notes(sources, constraints.speaker_notes_depth),
         "components": [
             {
                 "id": f"chart-{intent['id']}",
@@ -184,13 +208,18 @@ def _copy_slide(slide: dict[str, Any], copy_number: int) -> dict[str, Any]:
     return copied
 
 
-def _fit_slide_count(slides: list[dict[str, Any]], slide_count: int) -> list[dict[str, Any]]:
+def _fit_slide_count(
+    slides: list[dict[str, Any]],
+    slide_count: int,
+    *,
+    repeat_content: bool,
+) -> list[dict[str, Any]]:
     if slide_count < 1:
         raise ValueError("slide_count must be positive")
     fitted = slides[:slide_count]
     content = fitted[1:]
     copy_number = 1
-    while len(fitted) < slide_count:
+    while repeat_content and len(fitted) < slide_count:
         if not content:
             raise ValueError("analysis did not contain enough renderable content")
         source = content[(copy_number - 1) % len(content)]
@@ -205,8 +234,12 @@ def build_slide_spec(
     analysis: dict[str, Any],
     deck_type: str,
     slide_count: int,
+    density: PresentationDensity | str = PresentationDensity.BALANCED,
 ) -> dict[str, Any]:
     """Map validated analysis to the narrow, approved slide contract."""
+
+    density_profile, constraints = resolve_density_profile(density)
+    planning_target = target_slide_count(slide_count, constraints)
 
     slides: list[dict[str, Any]] = [
         {
@@ -242,17 +275,26 @@ def build_slide_spec(
             None,
         )
         if metric:
-            compiled = [_metric_slide(intent, metric)]
+            compiled = [_metric_slide(intent, metric, constraints)]
             trend = _trend_metrics(intent_metrics)
-            if len(trend) >= 2 and intent["preferredVisual"] in {"line", "bar", "waterfall"}:
-                compiled.extend((_table_slide(intent, trend), _chart_slide(intent, trend)))
+            if (
+                density_profile is not PresentationDensity.CONCISE
+                and len(trend) >= 2
+                and intent["preferredVisual"] in {"line", "bar", "waterfall"}
+            ):
+                compiled.extend(
+                    (
+                        _table_slide(intent, trend, constraints),
+                        _chart_slide(intent, trend, constraints),
+                    )
+                )
         elif finding:
             sources = _sources(finding["evidence"])
             compiled = [
                 {
                     "layoutId": "insight",
                     "title": intent["title"],
-                    "speakerNotes": _speaker_notes(sources),
+                    "speakerNotes": _speaker_notes(sources, constraints.speaker_notes_depth),
                     "components": [
                         {
                             "id": f"component-{finding['id']}",
@@ -288,9 +330,13 @@ def build_slide_spec(
         if component.get("metricId")
     }
     for metric in metrics.values():
-        if len(slides) >= slide_count or metric["id"] in rendered_metric_ids:
+        if len(slides) >= planning_target or metric["id"] in rendered_metric_ids:
             continue
-        slide = _metric_slide({"title": f"{metric['name']} — detail"}, metric)
+        slide = _metric_slide(
+            {"title": f"{metric['name']} — detail"},
+            metric,
+            constraints,
+        )
         slides.append(
             {
                 "id": f"slide-metric-{metric['id']}",
@@ -306,7 +352,7 @@ def build_slide_spec(
         if component.get("findingId")
     }
     for finding in findings.values():
-        if len(slides) >= slide_count or finding["id"] in rendered_finding_ids:
+        if len(slides) >= planning_target or finding["id"] in rendered_finding_ids:
             continue
         sources = _sources(finding["evidence"])
         slides.append(
@@ -315,7 +361,7 @@ def build_slide_spec(
                 "order": len(slides) + 1,
                 "layoutId": "insight",
                 "title": finding["title"],
-                "speakerNotes": _speaker_notes(sources),
+                "speakerNotes": _speaker_notes(sources, constraints.speaker_notes_depth),
                 "components": [
                     {
                         "id": f"component-finding-{finding['id']}",
@@ -332,7 +378,7 @@ def build_slide_spec(
 
     summary_sources = _unique_sources(list(metrics.values()))[:20]
     for index, summary in enumerate(analysis["executiveSummary"], start=1):
-        if len(slides) >= slide_count:
+        if len(slides) >= planning_target:
             break
         slides.append(
             {
@@ -340,7 +386,10 @@ def build_slide_spec(
                 "order": len(slides) + 1,
                 "layoutId": "insight",
                 "title": "Executive summary",
-                "speakerNotes": _speaker_notes(summary_sources),
+                "speakerNotes": _speaker_notes(
+                    summary_sources,
+                    constraints.speaker_notes_depth,
+                ),
                 "components": [
                     {
                         "id": f"component-summary-{index}",
@@ -354,9 +403,16 @@ def build_slide_spec(
             }
         )
 
-    slides = _fit_slide_count(slides, slide_count)
+    slides = _fit_slide_count(
+        slides,
+        planning_target,
+        repeat_content=density_profile is PresentationDensity.BALANCED,
+    )
     return {
         "schemaVersion": "0.1",
+        "densityContractVersion": "0.1",
+        "densityProfile": density_profile.value,
+        "densityConstraints": constraints.as_contract(),
         "deckId": f"deck-{analysis['analysisId']}",
         "sourceAnalysisId": analysis["analysisId"],
         "sourceDocumentIds": analysis["sourceDocumentIds"],
@@ -388,7 +444,7 @@ class SlideGenerationService:
         self._policy = policy
         self._audit = audit or NullAuditSink()
         self._jobs: dict[str, GenerationJob] = {}
-        self._request_jobs: dict[tuple[str, str, str], str] = {}
+        self._request_jobs: dict[tuple[str, str, str, str], str] = {}
         self._lock = RLock()
 
     def start(
@@ -397,12 +453,14 @@ class SlideGenerationService:
         owner_id: str,
         deck_type: str,
         request_key: str,
+        density_profile: PresentationDensity | str = PresentationDensity.BALANCED,
     ) -> GenerationJob:
         self._purge_expired_outputs()
         extraction_job, _ = self._extraction.result(extraction_job_id, owner_id)
         if deck_type != extraction_job.deck_purpose:
             raise GenerationConflictError("deck type must match the extraction request")
-        idempotency_key = (owner_id, extraction_job_id, request_key)
+        resolved_density, _ = resolve_density_profile(density_profile)
+        idempotency_key = (owner_id, extraction_job_id, request_key, resolved_density.value)
         with self._lock:
             existing_id = self._request_jobs.get(idempotency_key)
             if existing_id:
@@ -414,6 +472,7 @@ class SlideGenerationService:
             owner_id=owner_id,
             deck_type=deck_type,
             slide_count=extraction_job.slide_count,
+            density_profile=resolved_density,
             request_key=request_key,
             status=GenerationStatus.QUEUED,
             progress=0,
@@ -459,8 +518,13 @@ class SlideGenerationService:
             slide_spec = job.slide_spec
             if slide_spec is None:
                 _, document = self._extraction.result(job.extraction_job_id, job.owner_id)
-                analysis = await self._analysis.analyze(document)
-                slide_spec = build_slide_spec(analysis.analysis, job.deck_type, job.slide_count)
+                analysis = await self._analysis.analyze(document, density=job.density_profile)
+                slide_spec = build_slide_spec(
+                    analysis.analysis,
+                    job.deck_type,
+                    job.slide_count,
+                    density=job.density_profile,
+                )
                 job = self._save(
                     transition(
                         replace(

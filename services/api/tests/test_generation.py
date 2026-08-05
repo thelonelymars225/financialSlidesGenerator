@@ -25,6 +25,7 @@ from financial_slides_api.services.analysis import FinancialAnalysisService
 from financial_slides_api.services.generation import (
     SlideGenerationService,
     _analysis_provider_for_generation,
+    build_slide_spec,
 )
 from financial_slides_api.services.jobs import ExtractionJobService
 from financial_slides_api.worker import ExtractionJobWorker
@@ -167,6 +168,7 @@ def test_extracted_document_to_preview_and_powerpoint_download(tmp_path) -> None
         assert started.status_code == 202
         generation_job = started.json()
         assert generation_job["slide_count"] == 8
+        assert generation_job["density"] == "balanced"
 
         status = client.get(
             f"/api/slide-jobs/{generation_job['id']}",
@@ -321,6 +323,109 @@ def test_start_is_idempotent_for_the_same_automatic_request(tmp_path) -> None:
 
     assert repeated.id == first.id
     assert renderer.calls == 1
+
+
+def test_density_is_part_of_generation_idempotency(tmp_path) -> None:
+    service, extraction_job = generation_fixture(tmp_path, RecordingRenderer())
+
+    concise = service.start(
+        extraction_job.id,
+        extraction_job.owner_id,
+        "management-review",
+        "auto:density",
+        density_profile="concise",
+    )
+    detailed = service.start(
+        extraction_job.id,
+        extraction_job.owner_id,
+        "management-review",
+        "auto:density",
+        density_profile="detailed",
+    )
+
+    assert concise.id != detailed.id
+    assert concise.density_profile.value == "concise"
+    assert detailed.density_profile.value == "detailed"
+
+
+def test_generation_rejects_an_unknown_density(tmp_path) -> None:
+    renderer = RecordingRenderer()
+    service, extraction_job = generation_fixture(tmp_path, renderer)
+    app.dependency_overrides[generation_service_dependency] = lambda: service
+    client = TestClient(app)
+    try:
+        response = client.post(
+            f"/api/jobs/{extraction_job.id}/slides",
+            headers=OWNER_HEADERS,
+            json={"deck_type": "management-review", "density": "maximum"},
+        )
+
+        assert response.status_code == 422
+        assert renderer.calls == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_density_profiles_control_planning_without_inventing_content() -> None:
+    analysis = json.loads(ANALYSIS_EXAMPLE.read_text(encoding="utf-8"))
+
+    concise = build_slide_spec(analysis, "management-review", 8, density="concise")
+    balanced = build_slide_spec(analysis, "management-review", 8)
+    detailed = build_slide_spec(analysis, "management-review", 8, density="detailed")
+
+    assert concise["densityProfile"] == "concise"
+    assert balanced["densityProfile"] == "balanced"
+    assert detailed["densityProfile"] == "detailed"
+    assert len(concise["slides"]) <= 6
+    assert len(balanced["slides"]) == 8
+    assert len(detailed["slides"]) <= 16
+    assert not any(
+        component["type"] in {"table", "chart"}
+        for slide in concise["slides"]
+        for component in slide["components"]
+    )
+    assert any(
+        component["type"] == "chart"
+        for slide in balanced["slides"]
+        for component in slide["components"]
+    )
+
+    sparse = deepcopy(analysis)
+    sparse["metrics"] = sparse["metrics"][:1]
+    sparse["findings"] = []
+    sparse["executiveSummary"] = sparse["executiveSummary"][:1]
+    sparse["slideIntents"][0]["metricIds"] = [sparse["metrics"][0]["id"]]
+    sparse["slideIntents"][0]["findingIds"] = []
+    sparse_detailed = build_slide_spec(
+        sparse,
+        "management-review",
+        16,
+        density="detailed",
+    )
+    assert len(sparse_detailed["slides"]) < 10
+    assert all("-copy-" not in slide["id"] for slide in sparse_detailed["slides"])
+
+
+def test_density_caps_table_rows() -> None:
+    analysis = json.loads(ANALYSIS_EXAMPLE.read_text(encoding="utf-8"))
+    source = analysis["metrics"][0]
+    metrics = []
+    for index in range(14):
+        metric = deepcopy(source)
+        metric["id"] = f"revenue-period-{index + 1}"
+        metric["period"]["label"] = f"Period {index + 1}"
+        metrics.append(metric)
+    analysis["metrics"] = metrics
+    analysis["slideIntents"][0]["metricIds"] = [metric["id"] for metric in metrics]
+
+    spec = build_slide_spec(analysis, "management-review", 10, density="balanced")
+    table = next(
+        component
+        for slide in spec["slides"]
+        for component in slide["components"]
+        if component["type"] == "table"
+    )
+    assert len(table["rows"]) == 8
 
 
 def test_render_retry_reuses_successful_analysis(tmp_path) -> None:

@@ -22,6 +22,10 @@ from financial_slides_api.domain.analysis import (
     ProviderTelemetry,
     SourceNumber,
 )
+from financial_slides_api.domain.presentation import (
+    PresentationDensity,
+    resolve_density_profile,
+)
 from financial_slides_api.ports.analysis import AnalysisProvider
 
 MAX_FEEDBACK_ERRORS = 20
@@ -134,8 +138,13 @@ def _block_text(block: dict[str, Any]) -> str:
     return block.get("altText", "")
 
 
-def build_analysis_request(document: dict[str, Any]) -> AnalysisRequest:
+def build_analysis_request(
+    document: dict[str, Any],
+    density: PresentationDensity | str = PresentationDensity.BALANCED,
+) -> AnalysisRequest:
     """Keep only evidence-bearing content needed by a model provider."""
+
+    profile, constraints = resolve_density_profile(density)
 
     blocks = tuple(
         AnalysisSourceBlock(
@@ -148,7 +157,29 @@ def build_analysis_request(document: dict[str, Any]) -> AnalysisRequest:
         for page in document["pages"]
         for block in sorted(page["blocks"], key=lambda item: item["order"])
     )
-    return AnalysisRequest(document_id=document["documentId"], blocks=blocks)
+    return AnalysisRequest(
+        document_id=document["documentId"],
+        blocks=blocks,
+        density_profile=profile,
+        density_constraints=constraints,
+    )
+
+
+def density_analysis_errors(
+    analysis: dict[str, Any],
+    request: AnalysisRequest,
+) -> tuple[str, ...]:
+    """Enforce resolved planning limits without weakening grounding validation."""
+
+    constraints = request.density_constraints
+    if constraints is None:
+        return ()
+    errors: list[str] = []
+    if len(analysis.get("executiveSummary", ())) > constraints.max_bullets_per_slide:
+        errors.append("executiveSummary exceeds the resolved density bullet limit")
+    if len(analysis.get("slideIntents", ())) > constraints.target_slide_max - 1:
+        errors.append("slideIntents exceed the resolved density slide limit")
+    return tuple(errors)
 
 
 def _close(left: float, right: float) -> bool:
@@ -275,6 +306,7 @@ class FinancialAnalysisService:
         self,
         document: dict[str, Any],
         *,
+        density: PresentationDensity | str = PresentationDensity.BALANCED,
         is_cancelled: Callable[[], bool] = lambda: False,
     ) -> AnalysisResult:
         source_errors = _schema_errors(self._source_validator, document)
@@ -284,7 +316,7 @@ class FinancialAnalysisService:
                 "source document does not satisfy extracted-document-v0.1",
             )
 
-        request = build_analysis_request(document)
+        request = build_analysis_request(document, density)
         feedback: tuple[str, ...] = ()
         totals = ProviderTelemetry(provider="unknown", model="unknown")
         started = self._timer()
@@ -325,7 +357,12 @@ class FinancialAnalysisService:
             )
             schema_errors = _schema_errors(self._analysis_validator, response.output)
             evidence_errors = () if schema_errors else grounding_errors(response.output, request)
-            validation_errors = schema_errors + evidence_errors
+            density_errors = (
+                ()
+                if schema_errors or evidence_errors
+                else density_analysis_errors(response.output, request)
+            )
+            validation_errors = schema_errors + evidence_errors + density_errors
             if not validation_errors:
                 return AnalysisResult(
                     analysis=response.output,
@@ -362,11 +399,18 @@ class FinancialAnalysisService:
                     fallback.output,
                 )
                 fallback_evidence_errors = (
-                    ()
-                    if fallback_schema_errors
-                    else grounding_errors(fallback.output, request)
+                    () if fallback_schema_errors else grounding_errors(fallback.output, request)
                 )
-                if not fallback_schema_errors and not fallback_evidence_errors:
+                fallback_density_errors = (
+                    ()
+                    if fallback_schema_errors or fallback_evidence_errors
+                    else density_analysis_errors(fallback.output, request)
+                )
+                if (
+                    not fallback_schema_errors
+                    and not fallback_evidence_errors
+                    and not fallback_density_errors
+                ):
                     totals = ProviderTelemetry(
                         provider=fallback.telemetry.provider,
                         model=fallback.telemetry.model,
@@ -393,7 +437,7 @@ class FinancialAnalysisService:
 
         failure_code = (
             AnalysisFailureCode.INVALID_OUTPUT
-            if schema_errors
+            if schema_errors or density_errors
             else AnalysisFailureCode.UNGROUNDED_OUTPUT
         )
         raise AnalysisError(

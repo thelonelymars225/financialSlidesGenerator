@@ -15,6 +15,18 @@ test("slide specification v0.1 covers the representative deck", async () => {
   assert.deepEqual(result, { valid: true, errors: [] });
 });
 
+test("requires a resolved presentation density contract", async () => {
+  const unknown = await slideSpec();
+  unknown.densityProfile = "maximum";
+  const missing = await slideSpec();
+  delete missing.densityConstraints;
+
+  for (const deck of [unknown, missing]) {
+    const result = await validateContract("slideSpec", deck);
+    assert.equal(result.valid, false);
+  }
+});
+
 test("rejects arbitrary markup, URLs, layouts, components, and assets", async () => {
   const markup = await slideSpec();
   markup.slides[0].components[0].text = "<script>alert('x')</script>";

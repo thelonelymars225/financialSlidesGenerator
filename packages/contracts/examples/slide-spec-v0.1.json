@@ -1,5 +1,22 @@
 {
   "schemaVersion": "0.1",
+  "densityContractVersion": "0.1",
+  "densityProfile": "balanced",
+  "densityConstraints": {
+    "targetSlideRange": [6, 10],
+    "maxInsightsPerSlide": 2,
+    "maxBulletsPerSlide": 5,
+    "maxTableRows": 8,
+    "chartPreference": "when-useful",
+    "speakerNotesDepth": "standard",
+    "appendixPolicy": "evidence-dependent",
+    "preflight": {
+      "minFontSize": 16,
+      "minSpacing": 4,
+      "maxAutoFitPasses": 2,
+      "maxRepairAttempts": 2
+    }
+  },
   "deckId": "deck-q2-2026",
   "sourceAnalysisId": "analysis-q2-2026",
   "sourceDocumentIds": ["document-financial-report"],

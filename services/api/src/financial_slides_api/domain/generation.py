@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Any
 
 from financial_slides_api.domain.analysis import AnalysisTelemetry
+from financial_slides_api.domain.presentation import PresentationDensity
 
 
 class GenerationStatus(StrEnum):
@@ -30,6 +31,7 @@ class GenerationJob:
     owner_id: str
     deck_type: str
     slide_count: int
+    density_profile: PresentationDensity
     request_key: str
     status: GenerationStatus
     progress: int

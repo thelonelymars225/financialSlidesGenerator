@@ -107,6 +107,41 @@ function assertSafe(value, label) {
   }
 }
 
+export function densityPreflightPolicy(deckSpec) {
+  if (
+    deckSpec?.densityContractVersion !== "0.1" ||
+    !["concise", "balanced", "detailed"].includes(deckSpec.densityProfile)
+  ) {
+    throw new Error("Presentation density contract v0.1 is required");
+  }
+  const constraints = deckSpec.densityConstraints;
+  const preflight = constraints?.preflight;
+  if (
+    !constraints ||
+    !Array.isArray(constraints.targetSlideRange) ||
+    constraints.targetSlideRange.length !== 2 ||
+    !preflight
+  ) {
+    throw new Error("Resolved presentation density constraints are required");
+  }
+  return Object.freeze({ ...preflight });
+}
+
+function assertDensityLimits(deckSpec) {
+  const { maxInsightsPerSlide, maxTableRows } = deckSpec.densityConstraints;
+  for (const slide of deckSpec.slides) {
+    const insights = slide.components.filter(({ type }) => type === "insight").length;
+    if (insights > maxInsightsPerSlide) {
+      throw new Error(`Slide ${slide.id} exceeds the density insight limit`);
+    }
+    for (const table of slide.components.filter(({ type }) => type === "table")) {
+      if (table.rows.length > maxTableRows) {
+        throw new Error(`Slide ${slide.id} exceeds the density table-row limit`);
+      }
+    }
+  }
+}
+
 function regionStyle(region) {
   return `left:${region.x}px;top:${region.y}px;width:${region.width}px;height:${region.height}px`;
 }
@@ -221,23 +256,26 @@ export function compileDeckHtml(deckSpec, { assets = {}, fitOverrides = {} } = {
   if (deckSpec?.schemaVersion !== "0.1" || !Array.isArray(deckSpec.slides)) {
     throw new Error("Slide specification v0.1 is required");
   }
+  densityPreflightPolicy(deckSpec);
+  assertDensityLimits(deckSpec);
   resolvePresentationTheme(deckSpec.themeId);
   assertSafe(deckSpec, "Slide specification");
   const slides = [...deckSpec.slides]
     .sort((left, right) => left.order - right.order)
     .map((slide) => renderSlide(slide, assets, fitOverrides))
     .join("");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(deckSpec.title)}</title><style>${CSS}</style></head><body><main class="deck" data-deck-id="${escapeHtml(deckSpec.deckId)}">${slides}</main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(deckSpec.title)}</title><style>${CSS}</style></head><body><main class="deck" data-deck-id="${escapeHtml(deckSpec.deckId)}" data-density-profile="${escapeHtml(deckSpec.densityProfile)}">${slides}</main></body></html>`;
 }
 
 export async function runBrowserPreflight(
   deckSpec,
   { page, assets = {}, policy = {}, repairAttempt = 0 } = {},
 ) {
+  const densityPolicy = densityPreflightPolicy(deckSpec);
   return preflightBrowserDeck({
     page,
     deckSpec,
-    policy,
+    policy: { ...densityPolicy, ...policy },
     repairAttempt,
     layoutRegistry,
     compile: (fitOverrides) => compileDeckHtml(deckSpec, { assets, fitOverrides }),

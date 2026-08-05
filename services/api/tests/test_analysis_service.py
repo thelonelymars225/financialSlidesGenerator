@@ -112,6 +112,30 @@ def test_plain_text_preserves_multiple_period_specific_values() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("density", "slide_range", "max_bullets"),
+    [
+        ("concise", (4, 6), 3),
+        ("balanced", (6, 10), 5),
+        ("detailed", (10, 16), 7),
+    ],
+)
+def test_analysis_request_resolves_density_constraints(
+    density: str,
+    slide_range: tuple[int, int],
+    max_bullets: int,
+) -> None:
+    request = build_analysis_request(source_document(), density)
+
+    assert request.density_profile.value == density
+    assert request.density_constraints is not None
+    assert (
+        request.density_constraints.target_slide_min,
+        request.density_constraints.target_slide_max,
+    ) == slide_range
+    assert request.density_constraints.max_bullets_per_slide == max_bullets
+
+
 def test_plain_table_numbers_are_available_for_grounded_analysis() -> None:
     document = source_document()
     block = document["pages"][0]["blocks"][0]

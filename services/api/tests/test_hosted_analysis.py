@@ -198,7 +198,15 @@ def test_hosted_provider_sends_minimal_context_and_maps_usage() -> None:
     user_payload = json.loads(sent["messages"][1]["content"])
     assert requests[0].headers["authorization"] == "Bearer test-secret"
     assert requests[0].url == "https://provider.example/v1/chat/completions"
-    assert set(user_payload) == {"documentId", "blocks", "validationFeedback"}
+    assert set(user_payload) == {
+        "documentId",
+        "blocks",
+        "presentationDensity",
+        "densityConstraints",
+        "validationFeedback",
+    }
+    assert user_payload["presentationDensity"] == "balanced"
+    assert user_payload["densityConstraints"]["targetSlideRange"] == [6, 10]
     assert "pages" not in user_payload
     assert sent["response_format"]["json_schema"]["schema"]["title"] == "Analysis v0.2"
     assert result.telemetry.provider == "openai-compatible"

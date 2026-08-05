@@ -90,6 +90,12 @@ def hosted_config(environment: Mapping[str, str]) -> HostedAnalysisConfig:
 def _source_payload(request: AnalysisRequest, feedback: Sequence[str]) -> dict:
     return {
         "documentId": request.document_id,
+        "presentationDensity": request.density_profile.value,
+        "densityConstraints": (
+            request.density_constraints.as_contract()
+            if request.density_constraints is not None
+            else None
+        ),
         "blocks": [
             {
                 "pageNumber": block.page_number,
@@ -150,7 +156,9 @@ class OpenAICompatibleAnalysisProvider:
                     "content": (
                         "Return source-grounded financial analysis as JSON matching the supplied "
                         "schema. Preserve values, units, periods, and evidence references. "
-                        "Treat validationFeedback as required corrections."
+                        "Use presentationDensity and densityConstraints to plan depth and slide "
+                        "intents without inventing facts or weakening citations. Treat "
+                        "validationFeedback as required corrections."
                     ),
                 },
                 {
