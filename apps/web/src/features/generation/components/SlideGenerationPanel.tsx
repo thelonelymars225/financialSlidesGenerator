@@ -1,5 +1,9 @@
+import { useEffect } from "react";
 import type { DeckPurpose } from "../../extraction/types";
-import { generationFailureGuidance } from "../state";
+import {
+  automaticGenerationRequestKey,
+  generationFailureGuidance,
+} from "../state";
 import { useSlideGeneration } from "../hooks/useSlideGeneration";
 import { SlidePreview } from "./SlidePreview";
 
@@ -12,6 +16,22 @@ export function SlideGenerationPanel({
 }) {
   const generation = useSlideGeneration();
   const job = generation.job.data;
+  const automaticRequestKey = automaticGenerationRequestKey(extractionJobId, deckType);
+  const analysis = job?.analysis ?? generation.result.data?.job.analysis;
+
+  useEffect(() => {
+    if (!job && generation.start.status === "idle") {
+      generation.start.mutate({
+        extractionJobId,
+        deckType,
+        requestKey: automaticRequestKey,
+      });
+    }
+  }, [automaticRequestKey, deckType, extractionJobId, generation.start.status, job]);
+
+  function startAgain(requestKey: string) {
+    generation.start.mutate({ extractionJobId, deckType, requestKey });
+  }
 
   async function download() {
     const artifact = await generation.download.mutateAsync();
@@ -25,15 +45,22 @@ export function SlideGenerationPanel({
 
   return (
     <section className="mt-6 border-t border-stone-200 pt-6 dark:border-white/10">
-      {!job && (
-        <button
-          className="w-full rounded-xl bg-emerald-950 px-5 py-3 font-bold text-white disabled:opacity-45 dark:bg-emerald-200 dark:text-emerald-950"
-          disabled={generation.start.isPending}
-          onClick={() => generation.start.mutate({ extractionJobId, deckType })}
-          type="button"
-        >
-          {generation.start.isPending ? "Starting…" : "Generate presentation"}
-        </button>
+      {!job && generation.start.isPending && (
+        <p className="text-sm font-semibold text-stone-700 dark:text-stone-200" role="status">
+          Starting AI analysis…
+        </p>
+      )}
+      {!job && generation.start.isError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert">
+          <p>{generation.start.error instanceof Error ? generation.start.error.message : "AI slide generation could not start."}</p>
+          <button
+            className="mt-3 font-bold underline"
+            onClick={() => startAgain(automaticRequestKey)}
+            type="button"
+          >
+            Retry AI generation
+          </button>
+        </div>
       )}
       {job && job.status !== "succeeded" && job.status !== "failed" && (
         <div role="status">
@@ -54,6 +81,19 @@ export function SlideGenerationPanel({
           )}
         </div>
       )}
+      {job?.status === "succeeded" && (
+        <div className="mb-4 text-sm" role="status">
+          <strong>Ready</strong>
+          {analysis && (
+            <p className="mt-1 text-stone-600 dark:text-stone-300">
+              {analysis.mode === "hosted"
+                ? `AI analysis: ${analysis.provider} / ${analysis.model}`
+                : "Deterministic analysis — hosted AI was not used."}
+              {analysis.fallback_used ? " A deterministic fallback produced this deck." : ""}
+            </p>
+          )}
+        </div>
+      )}
       {generation.result.data && (
         <>
           <SlidePreview result={generation.result.data} />
@@ -64,6 +104,14 @@ export function SlideGenerationPanel({
             type="button"
           >
             {generation.download.isPending ? "Preparing download…" : "Download editable PowerPoint"}
+          </button>
+          <button
+            className="mt-3 w-full rounded-xl border border-emerald-900 px-5 py-3 font-bold text-emerald-950 disabled:opacity-45 dark:border-emerald-200 dark:text-emerald-100"
+            disabled={generation.start.isPending}
+            onClick={() => startAgain(`manual:${globalThis.crypto?.randomUUID?.() ?? Date.now()}`)}
+            type="button"
+          >
+            Generate again
           </button>
         </>
       )}

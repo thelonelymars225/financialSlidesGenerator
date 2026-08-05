@@ -164,7 +164,7 @@ def test_owner_can_delete_generated_output_and_expiry_preserves_job_metadata(
         policy=RetentionPolicy(),
         audit=MetadataAuditLogger(),
     )
-    first = generation.start(source_job.id, "owner-1", "management-review")
+    first = generation.start(source_job.id, "owner-1", "management-review", "privacy-1")
     asyncio.run(generation.run(first.id))
     assert generation.get(first.id, "owner-1").status is GenerationStatus.SUCCEEDED
 
@@ -188,7 +188,7 @@ def test_owner_can_delete_generated_output_and_expiry_preserves_job_metadata(
         with pytest.raises(GenerationNotReadyError):
             generation.result(first.id, "owner-1")
 
-        second = generation.start(source_job.id, "owner-1", "management-review")
+        second = generation.start(source_job.id, "owner-1", "management-review", "privacy-2")
         asyncio.run(generation.run(second.id))
         clock.advance_hours(25)
         expired = generation.get(second.id, "owner-1")

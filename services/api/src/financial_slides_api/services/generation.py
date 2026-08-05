@@ -388,13 +388,25 @@ class SlideGenerationService:
         self._policy = policy
         self._audit = audit or NullAuditSink()
         self._jobs: dict[str, GenerationJob] = {}
+        self._request_jobs: dict[tuple[str, str, str], str] = {}
         self._lock = RLock()
 
-    def start(self, extraction_job_id: str, owner_id: str, deck_type: str) -> GenerationJob:
+    def start(
+        self,
+        extraction_job_id: str,
+        owner_id: str,
+        deck_type: str,
+        request_key: str,
+    ) -> GenerationJob:
         self._purge_expired_outputs()
         extraction_job, _ = self._extraction.result(extraction_job_id, owner_id)
         if deck_type != extraction_job.deck_purpose:
             raise GenerationConflictError("deck type must match the extraction request")
+        idempotency_key = (owner_id, extraction_job_id, request_key)
+        with self._lock:
+            existing_id = self._request_jobs.get(idempotency_key)
+            if existing_id:
+                return self._jobs[existing_id]
         now = self._clock()
         job = GenerationJob(
             id=str(uuid4()),
@@ -402,6 +414,7 @@ class SlideGenerationService:
             owner_id=owner_id,
             deck_type=deck_type,
             slide_count=extraction_job.slide_count,
+            request_key=request_key,
             status=GenerationStatus.QUEUED,
             progress=0,
             attempt_count=0,
@@ -410,7 +423,11 @@ class SlideGenerationService:
             updated_at=now,
         )
         with self._lock:
+            existing_id = self._request_jobs.get(idempotency_key)
+            if existing_id:
+                return self._jobs[existing_id]
             self._jobs[job.id] = job
+            self._request_jobs[idempotency_key] = job.id
         return job
 
     def get(self, job_id: str, owner_id: str) -> GenerationJob:
@@ -432,19 +449,30 @@ class SlideGenerationService:
             if job.status is not GenerationStatus.QUEUED:
                 return
             job = replace(job, attempt_count=job.attempt_count + 1)
-            self._jobs[job.id] = transition(job, GenerationStatus.ANALYZING, 25, self._clock())
-        try:
-            _, document = self._extraction.result(job.extraction_job_id, job.owner_id)
-            analysis = await self._analysis.analyze(document)
-            slide_spec = build_slide_spec(analysis.analysis, job.deck_type, job.slide_count)
-            self._save(
-                transition(
-                    replace(job, slide_spec=slide_spec),
-                    GenerationStatus.RENDERING,
-                    75,
-                    self._clock(),
-                )
+            next_status = (
+                GenerationStatus.RENDERING if job.slide_spec else GenerationStatus.ANALYZING
             )
+            next_progress = 75 if job.slide_spec else 25
+            job = transition(job, next_status, next_progress, self._clock())
+            self._jobs[job.id] = job
+        try:
+            slide_spec = job.slide_spec
+            if slide_spec is None:
+                _, document = self._extraction.result(job.extraction_job_id, job.owner_id)
+                analysis = await self._analysis.analyze(document)
+                slide_spec = build_slide_spec(analysis.analysis, job.deck_type, job.slide_count)
+                job = self._save(
+                    transition(
+                        replace(
+                            job,
+                            slide_spec=slide_spec,
+                            analysis_telemetry=analysis.telemetry,
+                        ),
+                        GenerationStatus.RENDERING,
+                        75,
+                        self._clock(),
+                    )
+                )
             artifact = await asyncio.to_thread(self._renderer.render, slide_spec)
             self._save(
                 replace(

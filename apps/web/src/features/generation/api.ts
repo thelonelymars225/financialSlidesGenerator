@@ -29,11 +29,15 @@ function ownerHeaders(ownerId: string): HeadersInit {
 
 export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-development") {
   return {
-    async start(extractionJobId: string, deckType: DeckPurpose): Promise<GenerationJob> {
+    async start(
+      extractionJobId: string,
+      deckType: DeckPurpose,
+      requestKey: string,
+    ): Promise<GenerationJob> {
       const response = await fetcher(apiUrl(`/api/jobs/${encodeURIComponent(extractionJobId)}/slides`), {
         method: "POST",
         headers: { "content-type": "application/json", ...ownerHeaders(ownerId) },
-        body: JSON.stringify({ deck_type: deckType }),
+        body: JSON.stringify({ deck_type: deckType, request_key: requestKey }),
       });
       return parseResponse<GenerationJob>(response);
     },

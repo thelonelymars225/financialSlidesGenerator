@@ -80,6 +80,7 @@ class AnalysisTelemetry:
     input_tokens: int
     output_tokens: int
     external_cost_usd: float
+    fallback_used: bool = False
 
 
 @dataclass(frozen=True)

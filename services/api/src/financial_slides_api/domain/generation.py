@@ -5,6 +5,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
+from financial_slides_api.domain.analysis import AnalysisTelemetry
+
 
 class GenerationStatus(StrEnum):
     QUEUED = "queued"
@@ -28,6 +30,7 @@ class GenerationJob:
     owner_id: str
     deck_type: str
     slide_count: int
+    request_key: str
     status: GenerationStatus
     progress: int
     attempt_count: int
@@ -35,6 +38,7 @@ class GenerationJob:
     created_at: datetime
     updated_at: datetime
     failure: GenerationFailure | None = None
+    analysis_telemetry: AnalysisTelemetry | None = None
     slide_spec: dict[str, Any] | None = None
     artifact: bytes | None = None
 

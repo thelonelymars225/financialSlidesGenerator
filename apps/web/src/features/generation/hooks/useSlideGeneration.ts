@@ -12,10 +12,12 @@ export function useSlideGeneration() {
     mutationFn: ({
       extractionJobId,
       deckType,
+      requestKey,
     }: {
       extractionJobId: string;
       deckType: DeckPurpose;
-    }) => generationApi.start(extractionJobId, deckType),
+      requestKey: string;
+    }) => generationApi.start(extractionJobId, deckType, requestKey),
     onSuccess: (job) => setJobId(job.id),
   });
 

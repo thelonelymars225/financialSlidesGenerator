@@ -1,5 +1,5 @@
 import type { GenerationApi } from "./api";
-import { isTerminalGeneration } from "./state";
+import { automaticGenerationRequestKey, isTerminalGeneration } from "./state";
 import type { GenerationJob, GenerationResult } from "./types";
 
 type Wait = (milliseconds: number) => Promise<void>;
@@ -27,7 +27,11 @@ export async function generatePollAndLoad(
   deckType: Parameters<GenerationApi["start"]>[1],
   options: Parameters<typeof waitForGeneration>[2] = {},
 ): Promise<{ job: GenerationJob; result?: GenerationResult }> {
-  const created = await api.start(extractionJobId, deckType);
+  const created = await api.start(
+    extractionJobId,
+    deckType,
+    automaticGenerationRequestKey(extractionJobId, deckType),
+  );
   const job = await waitForGeneration(api, created.id, options);
   return job.status === "succeeded"
     ? { job, result: await api.getResult(job.id) }
