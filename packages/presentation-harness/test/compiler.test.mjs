@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -6,9 +7,11 @@ import {
   compileDeckHtml,
   densityPreflightPolicy,
   defaultPresentationTheme,
+  formatSourceReferences,
   layoutRegistry,
   resolvePresentationTheme,
 } from "../src/index.js";
+import { visualFixture } from "./visual-fixture.mjs";
 
 function luminance(hex) {
   const channels = hex.match(/.{2}/g).map((value) => Number.parseInt(value, 16) / 255);
@@ -36,12 +39,46 @@ test("registry constrains canvas, regions, typography, and components", () => {
   assert.deepEqual(layoutRegistry.chart.canvas, { width: 1280, height: 720 });
   assert.equal(layoutRegistry.chart.typography.titleSize, 44);
   assert.deepEqual(layoutRegistry["financial-table"].allowedComponents, ["text", "table"]);
+  assert.deepEqual(layoutRegistry["key-drivers"].allowedComponents, ["text", "metric", "insight"]);
+  assert.deepEqual(layoutRegistry["risks-actions"].allowedComponents, ["text", "insight"]);
+  assert.deepEqual(layoutRegistry["sources-appendix"].allowedComponents, ["text", "table"]);
   assert.deepEqual(layoutRegistry.chart.regions.primary, {
     x: 72,
     y: 144,
     width: 744,
     height: 504,
   });
+});
+
+test("compiles every polished core layout deterministically across density profiles", () => {
+  const snapshots = {
+    concise: "b61a4279fe1fb05d1172ac346f1fb7d8167111e9f0b9f581e31b84abc4972821",
+    balanced: "1d9830c13e9b164c7e870d1ebc6672a564d348e28eeb1abf2b82fe50bbe42067",
+    detailed: "7977cf1fb2d723d77fe37b977672aa5733541c97735dc07ed31e1d35a7168864",
+  };
+  for (const density of ["concise", "balanced", "detailed"]) {
+    const deck = visualFixture(density);
+    const html = compileDeckHtml(deck);
+    assert.equal(html, compileDeckHtml(structuredClone(deck)));
+    assert.equal(createHash("sha256").update(html).digest("hex"), snapshots[density]);
+    assert.equal((html.match(/<section class="slide /g) ?? []).length, 8);
+    for (const layout of ["title", "executive-summary", "kpi-grid", "chart", "financial-table", "key-drivers", "risks-actions", "sources-appendix"]) {
+      assert.match(html, new RegExp(`layout-${layout}`));
+    }
+    assert.match(html, /metric-negative/);
+    assert.doesNotMatch(html, /<script|javascript:/i);
+  }
+});
+
+test("keeps long citations in data while containing the visible source footer", () => {
+  const slide = visualFixture("balanced").slides.at(-1);
+  const visible = formatSourceReferences(slide);
+  const complete = formatSourceReferences(slide, Number.POSITIVE_INFINITY);
+
+  assert.ok(visible.length <= 180);
+  assert.match(visible, /…$/);
+  assert.ok(complete.length > visible.length);
+  assert.match(complete, /p\.10/);
 });
 
 test("default theme is complete, immutable, and readable", () => {

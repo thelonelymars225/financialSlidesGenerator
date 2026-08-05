@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { validateContract } from "../scripts/contract-validation.mjs";
+import { visualFixture } from "../../presentation-harness/test/visual-fixture.mjs";
 
 async function slideSpec() {
   return JSON.parse(
@@ -13,6 +14,15 @@ async function slideSpec() {
 test("slide specification v0.1 covers the representative deck", async () => {
   const result = await validateContract("slideSpec", await slideSpec());
   assert.deepEqual(result, { valid: true, errors: [] });
+});
+
+test("accepts the polished core-layout fixture at every density", async () => {
+  for (const density of ["concise", "balanced", "detailed"]) {
+    assert.deepEqual(await validateContract("slideSpec", visualFixture(density)), {
+      valid: true,
+      errors: [],
+    });
+  }
 });
 
 test("requires a resolved presentation density contract", async () => {
