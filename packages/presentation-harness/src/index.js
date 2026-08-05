@@ -6,14 +6,19 @@ import {
   measureBrowserPage,
   preflightBrowserDeck,
 } from "./preflight.js";
+import {
+  defaultPresentationTheme,
+  resolvePresentationTheme,
+} from "./theme.js";
 
 const CANVAS = Object.freeze({ width: 1280, height: 720 });
+const THEME = defaultPresentationTheme;
 const TYPOGRAPHY = Object.freeze({
-  fontFamily: "Aptos, Arial, sans-serif",
-  titleSize: 44,
-  headingSize: 32,
-  bodySize: 24,
-  captionSize: 16,
+  fontFamily: `${THEME.fonts.body}, ${THEME.fonts.fallback}`,
+  titleSize: THEME.typography.title.web,
+  headingSize: THEME.typography.heading.web,
+  bodySize: THEME.typography.body.web,
+  captionSize: THEME.typography.caption.web,
 });
 
 const REGIONS = Object.freeze({
@@ -60,22 +65,27 @@ export const layoutRegistry = Object.freeze({
 });
 
 const UNSAFE_CONTENT = /<\/?[a-z][^>]*>|javascript:|data:text\/html/i;
+function cssColor(value) {
+  return `#${value.toLowerCase()}`;
+}
+
 const CSS = `
-*{box-sizing:border-box}html,body{margin:0;background:#e2e8f0}
-body{font-family:Aptos,Arial,sans-serif;color:#17324d}
+*{box-sizing:border-box}html,body{margin:0;background:${cssColor(THEME.colors.border)}}
+body{font-family:${THEME.fonts.body},${THEME.fonts.fallback};color:${cssColor(THEME.colors.ink)}}
 .deck{display:grid;gap:24px;padding:24px}
-.slide{position:relative;width:1280px;height:720px;overflow:hidden;background:#fff}
+.slide{position:relative;width:1280px;height:720px;overflow:hidden;background:${cssColor(THEME.colors.canvas)}}
 .slide-title{position:absolute;left:72px;top:40px;width:1136px;height:72px;margin:0;
-font-size:44px;line-height:1.1;border-bottom:2px solid #0d9488}
-.component{position:absolute;overflow:hidden;font-size:24px;line-height:1.3}
-.text-heading,.text-callout{font-weight:700}.text-heading{font-size:32px}
-.text-caption{font-size:16px}.metric{text-align:center}
-.metric-value{display:block;color:#0d9488;font-size:56px;font-weight:700}
-.insight{padding:28px;background:#f8fafc;border:1px solid #e2e8f0;font-weight:700}
-.insight-positive{color:#15803d}.insight-negative{color:#b91c1c}
-.insight-warning{color:#b45309}.insight-neutral{color:#475569}
-table{width:100%;border-collapse:collapse}th,td{padding:12px;border:1px solid #e2e8f0;text-align:left}
-th{background:#f8fafc}.chart-data caption{text-align:left;font-weight:700;margin-bottom:12px}
+font-family:${THEME.fonts.heading},${THEME.fonts.fallback};font-size:${THEME.typography.title.web}px;line-height:1.1;border-bottom:2px solid ${cssColor(THEME.colors.accent)}}
+.component{position:absolute;overflow:hidden;font-size:${THEME.typography.body.web}px;line-height:1.3}
+.text-heading,.text-callout{font-weight:700}.text-heading{font-size:${THEME.typography.heading.web}px}
+.text-caption{font-size:${THEME.typography.caption.web}px;color:${cssColor(THEME.colors.muted)}}.metric{text-align:center}
+.metric-value{display:block;color:${cssColor(THEME.colors.accent)};font-size:${THEME.typography.metric.web}px;font-weight:700}
+.insight{padding:28px;background:${cssColor(THEME.colors.surface)};border:1px solid ${cssColor(THEME.colors.border)};font-weight:700}
+.insight-positive{color:${cssColor(THEME.colors.positive)}}.insight-negative{color:${cssColor(THEME.colors.negative)}}
+.insight-warning{color:${cssColor(THEME.colors.warning)}}.insight-neutral{color:${cssColor(THEME.colors.muted)}}
+table{width:100%;border-collapse:collapse}th,td{padding:12px;border:1px solid ${cssColor(THEME.table.border)};text-align:left}
+th{background:${cssColor(THEME.table.headerFill)};color:${cssColor(THEME.table.headerText)}}tbody tr:nth-child(even){background:${cssColor(THEME.table.stripeFill)}}
+.chart-data caption{text-align:left;font-weight:700;margin-bottom:12px}.slide-source-note{position:absolute;left:72px;top:684px;width:1136px;height:20px;overflow:hidden;color:${cssColor(THEME.sourceNote.color)};font-size:${THEME.sourceNote.webFontSize}px}
 .image{object-fit:contain} @media print{.deck{display:block;padding:0}.slide{break-after:page}}
 `.trim();
 
@@ -106,6 +116,18 @@ function sourceAttribute(component) {
     .map(({ documentId, pageNumber, blockId }) => `${documentId}:${pageNumber}:${blockId}`)
     .join(",");
   return sources ? ` data-sources="${escapeHtml(sources)}"` : "";
+}
+
+function sourceNote(slide) {
+  const references = new Map();
+  for (const component of slide.components) {
+    for (const source of component.sources ?? []) {
+      const label = `${source.documentId} p.${source.pageNumber}`;
+      references.set(label, label);
+    }
+  }
+  const text = [...references.values()].join("; ");
+  return text ? `<div class="slide-source-note">Sources: ${escapeHtml(text)}</div>` : "";
 }
 
 function assetUrl(assetRef, assets) {
@@ -192,13 +214,14 @@ function renderSlide(slide, assets, fitOverrides) {
     if (!region) throw new Error(`Layout ${slide.layoutId} does not define region ${component.region}`);
     return renderComponent(component, region, assets, fitOverrides);
   });
-  return `<section class="slide layout-${slide.layoutId}" data-slide-id="${escapeHtml(slide.id)}"><h1 class="slide-title">${escapeHtml(slide.title)}</h1>${components.join("")}</section>`;
+  return `<section class="slide layout-${slide.layoutId}" data-slide-id="${escapeHtml(slide.id)}"><h1 class="slide-title">${escapeHtml(slide.title)}</h1>${components.join("")}${sourceNote(slide)}</section>`;
 }
 
 export function compileDeckHtml(deckSpec, { assets = {}, fitOverrides = {} } = {}) {
   if (deckSpec?.schemaVersion !== "0.1" || !Array.isArray(deckSpec.slides)) {
     throw new Error("Slide specification v0.1 is required");
   }
+  resolvePresentationTheme(deckSpec.themeId);
   assertSafe(deckSpec, "Slide specification");
   const slides = [...deckSpec.slides]
     .sort((left, right) => left.order - right.order)
@@ -227,6 +250,8 @@ export {
   createRepairPlan,
   deriveFitOverrides,
   measureBrowserPage,
+  defaultPresentationTheme,
+  resolvePresentationTheme,
 };
 
 export function createPreflightReport(slideCount) {
