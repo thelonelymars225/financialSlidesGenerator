@@ -57,7 +57,8 @@ def start_generation(
             str(extraction_job_id),
             owner_id,
             request.deck_type,
-            request.request_key or f"auto:{extraction_job_id}:{request.deck_type}",
+            request_key=(request.request_key or f"auto:{extraction_job_id}:{request.deck_type}"),
+            density_profile=request.density,
         )
     except JobNotFoundError as error:
         raise _not_found(error) from error

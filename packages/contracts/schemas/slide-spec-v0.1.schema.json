@@ -7,6 +7,9 @@
   "additionalProperties": false,
   "required": [
     "schemaVersion",
+    "densityContractVersion",
+    "densityProfile",
+    "densityConstraints",
     "deckId",
     "sourceAnalysisId",
     "sourceDocumentIds",
@@ -17,6 +20,9 @@
   ],
   "properties": {
     "schemaVersion": { "const": "0.1" },
+    "densityContractVersion": { "const": "0.1" },
+    "densityProfile": { "enum": ["concise", "balanced", "detailed"] },
+    "densityConstraints": { "$ref": "#/$defs/densityConstraints" },
     "deckId": { "$ref": "#/$defs/id" },
     "sourceAnalysisId": { "$ref": "#/$defs/id" },
     "sourceDocumentIds": {
@@ -37,6 +43,58 @@
     }
   },
   "$defs": {
+    "densityConstraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetSlideRange",
+        "maxInsightsPerSlide",
+        "maxBulletsPerSlide",
+        "maxTableRows",
+        "chartPreference",
+        "speakerNotesDepth",
+        "appendixPolicy",
+        "preflight"
+      ],
+      "properties": {
+        "targetSlideRange": {
+          "type": "array",
+          "prefixItems": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "integer", "minimum": 1 }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "maxInsightsPerSlide": { "type": "integer", "minimum": 1 },
+        "maxBulletsPerSlide": { "type": "integer", "minimum": 1 },
+        "maxTableRows": { "type": "integer", "minimum": 1 },
+        "chartPreference": {
+          "enum": ["essential-only", "when-useful", "when-supported"]
+        },
+        "speakerNotesDepth": { "enum": ["minimal", "standard", "rich"] },
+        "appendixPolicy": {
+          "enum": ["only-when-needed", "evidence-dependent", "include-when-supported"]
+        },
+        "preflight": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "minFontSize",
+            "minSpacing",
+            "maxAutoFitPasses",
+            "maxRepairAttempts"
+          ],
+          "properties": {
+            "minFontSize": { "type": "number", "minimum": 12 },
+            "minSpacing": { "type": "number", "minimum": 0 },
+            "maxAutoFitPasses": { "type": "integer", "minimum": 0 },
+            "maxRepairAttempts": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
     "id": {
       "type": "string",
       "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]*$",

@@ -11,6 +11,7 @@ from financial_slides_api.domain.generation import GenerationJob
 
 class StartGenerationRequest(BaseModel):
     deck_type: Literal["management-review", "board-update", "investor-summary"]
+    density: Literal["concise", "balanced", "detailed"] = "balanced"
     request_key: str | None = Field(default=None, min_length=1, max_length=128)
 
 
@@ -34,6 +35,7 @@ class GenerationJobResponse(BaseModel):
     extraction_job_id: UUID
     deck_type: str
     slide_count: int
+    density: Literal["concise", "balanced", "detailed"]
     status: Literal["queued", "analyzing", "rendering", "succeeded", "failed"]
     progress: int
     attempt_count: int
@@ -50,6 +52,7 @@ class GenerationJobResponse(BaseModel):
             extraction_job_id=UUID(job.extraction_job_id),
             deck_type=job.deck_type,
             slide_count=job.slide_count,
+            density=job.density_profile.value,
             status=job.status.value,
             progress=job.progress,
             attempt_count=job.attempt_count,

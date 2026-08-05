@@ -4,6 +4,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from financial_slides_api.domain.presentation import (
+    DensityConstraints,
+    PresentationDensity,
+)
+
 
 class AnalysisFailureCode(StrEnum):
     INVALID_SOURCE = "invalid_source"
@@ -53,6 +58,8 @@ class AnalysisSourceBlock:
 class AnalysisRequest:
     document_id: str
     blocks: tuple[AnalysisSourceBlock, ...]
+    density_profile: PresentationDensity = PresentationDensity.BALANCED
+    density_constraints: DensityConstraints | None = None
 
 
 @dataclass(frozen=True)
