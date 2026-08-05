@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://financialslidesgenerator.local/schemas/extracted-document-v0.2.schema.json",
+  "title": "Extracted Document v0.2",
+  "description": "Provider-neutral raw extraction enriched with comparable, traceable financial facts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "documentId",
+    "source",
+    "pages",
+    "warnings",
+    "financialFacts",
+    "factValidation"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "0.2" },
+    "documentId": {
+      "$ref": "https://financialslidesgenerator.local/schemas/extracted-document-v0.1.schema.json#/$defs/nonEmptyString"
+    },
+    "source": {
+      "$ref": "https://financialslidesgenerator.local/schemas/extracted-document-v0.1.schema.json#/$defs/documentSource"
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "https://financialslidesgenerator.local/schemas/extracted-document-v0.1.schema.json#/$defs/page"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "https://financialslidesgenerator.local/schemas/extracted-document-v0.1.schema.json#/$defs/warning"
+      }
+    },
+    "financialFacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/financialFact" }
+    },
+    "factValidation": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/validationFinding" }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]*$"
+    },
+    "nullableString": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "nullableNumber": {
+      "type": ["number", "null"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "label", "startDate", "endDate"],
+      "properties": {
+        "type": { "enum": ["instant", "month", "quarter", "year", "range", "unknown"] },
+        "label": { "$ref": "#/$defs/nullableString" },
+        "startDate": {
+          "type": ["string", "null"],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "endDate": {
+          "type": ["string", "null"],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity", "segment"],
+      "properties": {
+        "entity": { "$ref": "#/$defs/nullableString" },
+        "segment": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "factEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "pageNumber", "blockId", "headerPath"],
+      "properties": {
+        "sourceId": {
+          "$ref": "https://financialslidesgenerator.local/schemas/extracted-document-v0.1.schema.json#/$defs/nonEmptyString"
+        },
+        "pageNumber": { "type": "integer", "minimum": 1 },
+        "blockId": {
+          "$ref": "https://financialslidesgenerator.local/schemas/extracted-document-v0.1.schema.json#/$defs/nonEmptyString"
+        },
+        "tableId": {
+          "$ref": "https://financialslidesgenerator.local/schemas/extracted-document-v0.1.schema.json#/$defs/nonEmptyString"
+        },
+        "row": { "type": "integer", "minimum": 0 },
+        "column": { "type": "integer", "minimum": 0 },
+        "headerPath": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "boundingBox": {
+          "$ref": "https://financialslidesgenerator.local/schemas/extracted-document-v0.1.schema.json#/$defs/boundingBox"
+        }
+      },
+      "dependentRequired": {
+        "tableId": ["row", "column"],
+        "row": ["tableId", "column"],
+        "column": ["tableId", "row"]
+      }
+    },
+    "fieldConfidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "overall",
+        "label",
+        "metric",
+        "statementType",
+        "displayedValue",
+        "parsedValue",
+        "normalizedValue",
+        "unit",
+        "currency",
+        "scaleFactor",
+        "period",
+        "scope",
+        "scenario",
+        "restatementStatus",
+        "evidence"
+      ],
+      "properties": {
+        "overall": { "$ref": "#/$defs/confidence" },
+        "label": { "$ref": "#/$defs/confidence" },
+        "metric": { "$ref": "#/$defs/confidence" },
+        "statementType": { "$ref": "#/$defs/confidence" },
+        "displayedValue": { "$ref": "#/$defs/confidence" },
+        "parsedValue": { "$ref": "#/$defs/confidence" },
+        "normalizedValue": { "$ref": "#/$defs/confidence" },
+        "unit": { "$ref": "#/$defs/confidence" },
+        "currency": { "$ref": "#/$defs/confidence" },
+        "scaleFactor": { "$ref": "#/$defs/confidence" },
+        "period": { "$ref": "#/$defs/confidence" },
+        "scope": { "$ref": "#/$defs/confidence" },
+        "scenario": { "$ref": "#/$defs/confidence" },
+        "restatementStatus": { "$ref": "#/$defs/confidence" },
+        "evidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "factRelations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duplicateOf", "conflictsWith"],
+      "properties": {
+        "duplicateOf": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        },
+        "conflictsWith": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        }
+      }
+    },
+    "metricIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "financialFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "metric",
+        "statementType",
+        "displayedValue",
+        "parsedValue",
+        "normalizedValue",
+        "unit",
+        "currency",
+        "scaleFactor",
+        "period",
+        "scope",
+        "scenario",
+        "restatementStatus",
+        "evidence",
+        "confidence",
+        "warnings",
+        "relations"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "label": { "type": "string", "minLength": 1 },
+        "metric": { "$ref": "#/$defs/metricIdentity" },
+        "statementType": {
+          "enum": [
+            "income_statement",
+            "balance_sheet",
+            "cash_flow",
+            "segment",
+            "kpi",
+            "other",
+            "unknown"
+          ]
+        },
+        "displayedValue": { "type": "string", "minLength": 1 },
+        "parsedValue": { "$ref": "#/$defs/nullableNumber" },
+        "normalizedValue": { "$ref": "#/$defs/nullableNumber" },
+        "unit": {
+          "type": ["string", "null"],
+          "enum": ["currency", "percentage", "basis_points", "count", "ratio", null]
+        },
+        "currency": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Z]{3}$"
+        },
+        "scaleFactor": {
+          "anyOf": [
+            { "type": "number", "exclusiveMinimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "period": { "$ref": "#/$defs/period" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "scenario": { "enum": ["actual", "budget", "forecast", "unknown"] },
+        "restatementStatus": {
+          "enum": ["restated", "originally_reported", "not_indicated", "unknown"]
+        },
+        "evidence": { "$ref": "#/$defs/factEvidence" },
+        "confidence": { "$ref": "#/$defs/fieldConfidence" },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "https://financialslidesgenerator.local/schemas/extracted-document-v0.1.schema.json#/$defs/warning"
+          }
+        },
+        "relations": { "$ref": "#/$defs/factRelations" }
+      }
+    },
+    "validationFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "factIds"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "message": { "type": "string", "minLength": 1 },
+        "factIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        }
+      }
+    }
+  }
+}

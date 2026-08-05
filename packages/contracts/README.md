@@ -5,10 +5,23 @@ analysis, layout, and rendering. Contracts are provider-neutral: they may descri
 output from local parsing, OCR, a document API, or a vision model without importing
 an SDK or exposing provider-specific response objects.
 
+## Extracted Document v0.2
+
+`schemas/extracted-document-v0.2.schema.json` keeps every raw v0.1 page and block and adds a
+finance-aware fact layer. Each fact carries the displayed value, parsed and normalized values,
+stable metric identity, statement type, period, unit, currency, scale, entity/segment scope,
+scenario, restatement status, table-header lineage, source geometry, and confidence per field.
+
+Ambiguity is data rather than an implicit guess: nullable normalized fields preserve the raw
+displayed value, fact warnings explain missing or failed mappings, and `factValidation` collects
+document-level duplicate, conflict, parse, unit, period, and reconciliation findings. New
+extraction producers emit v0.2. The v0.1 schema remains valid for stored results and provider page
+responses during migration.
+
 ## Extracted Document v0.1
 
-`schemas/extracted-document-v0.1.schema.json` is the canonical result of source
-extraction. It preserves:
+`schemas/extracted-document-v0.1.schema.json` is the backward-compatible raw extraction boundary.
+It preserves:
 
 - document, page, section, and bounding-box provenance;
 - ordered text, table, and image blocks;

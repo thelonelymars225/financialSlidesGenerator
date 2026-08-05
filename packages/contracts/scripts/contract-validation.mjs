@@ -7,7 +7,14 @@ import { calculationError, normalizationError } from "./financial-calculations.m
 const schemaUrls = {
   "analysis:0.1": new URL("../schemas/analysis-v0.1.schema.json", import.meta.url),
   "analysis:0.2": new URL("../schemas/analysis-v0.2.schema.json", import.meta.url),
-  extractedDocument: new URL("../schemas/extracted-document-v0.1.schema.json", import.meta.url),
+  "extractedDocument:0.1": new URL(
+    "../schemas/extracted-document-v0.1.schema.json",
+    import.meta.url,
+  ),
+  "extractedDocument:0.2": new URL(
+    "../schemas/extracted-document-v0.2.schema.json",
+    import.meta.url,
+  ),
   slideSpec: new URL("../schemas/slide-spec-v0.1.schema.json", import.meta.url),
 };
 
@@ -25,6 +32,12 @@ async function getValidator(contractName) {
 
   const schema = JSON.parse(await readFile(schemaUrl, "utf8"));
   const ajv = new Ajv2020({ allErrors: true, strict: true });
+  if (contractName === "extractedDocument:0.2") {
+    const previousSchema = JSON.parse(
+      await readFile(schemaUrls["extractedDocument:0.1"], "utf8"),
+    );
+    ajv.addSchema(previousSchema);
+  }
   const validator = ajv.compile(schema);
   validators.set(contractName, validator);
   return validator;
@@ -76,7 +89,90 @@ function semanticExtractionErrors(document) {
     }
   }
 
+  if (document.schemaVersion === "0.2") {
+    validateFinancialFacts(document, blockIds, errors);
+  }
+
   return errors;
+}
+
+function validateFinancialFacts(document, blockIds, errors) {
+  const factIds = new Set();
+  const pageNumbers = new Set((document.pages ?? []).map((page) => page.pageNumber));
+  const findingFactIds = new Set(
+    (document.factValidation ?? []).flatMap((finding) => finding.factIds ?? []),
+  );
+
+  for (const fact of document.financialFacts ?? []) {
+    if (factIds.has(fact.id)) {
+      errors.push(`duplicate financial fact id ${fact.id}`);
+    }
+    factIds.add(fact.id);
+
+    if (fact.evidence.sourceId !== document.source.sourceId) {
+      errors.push(`financial fact ${fact.id} references a different source`);
+    }
+    if (!pageNumbers.has(fact.evidence.pageNumber)) {
+      errors.push(`financial fact ${fact.id} references unknown page ${fact.evidence.pageNumber}`);
+    }
+    if (!blockIds.has(fact.evidence.blockId)) {
+      errors.push(`financial fact ${fact.id} references unknown block ${fact.evidence.blockId}`);
+    }
+    if (fact.evidence.tableId && fact.evidence.tableId !== fact.evidence.blockId) {
+      errors.push(`financial fact ${fact.id} tableId must match its blockId`);
+    }
+
+    const numericFields = [fact.parsedValue, fact.normalizedValue, fact.scaleFactor];
+    if (numericFields.every((value) => value !== null)) {
+      const expected = fact.parsedValue * fact.scaleFactor;
+      if (Math.abs(expected - fact.normalizedValue) > Math.max(1e-9, Math.abs(expected) * 1e-12)) {
+        errors.push(`financial fact ${fact.id} normalizedValue must equal parsedValue × scaleFactor`);
+      }
+    } else if (numericFields.some((value) => value !== null)) {
+      errors.push(`financial fact ${fact.id} numeric fields must be all populated or all null`);
+    }
+
+    const warningCodes = new Set((fact.warnings ?? []).map((warning) => warning.code));
+    if (fact.parsedValue === null && !warningCodes.has("numeric.parse_failed")) {
+      errors.push(`financial fact ${fact.id} must flag numeric.parse_failed`);
+    }
+    if (fact.period.type === "unknown" && !warningCodes.has("period.missing")) {
+      errors.push(`financial fact ${fact.id} must flag period.missing`);
+    }
+    if (fact.unit === null && !warningCodes.has("unit.missing")) {
+      errors.push(`financial fact ${fact.id} must flag unit.missing`);
+    }
+
+    for (const relatedId of [
+      ...(fact.relations?.duplicateOf ?? []),
+      ...(fact.relations?.conflictsWith ?? []),
+    ]) {
+      if (relatedId === fact.id) {
+        errors.push(`financial fact ${fact.id} cannot relate to itself`);
+      }
+    }
+  }
+
+  for (const finding of document.factValidation ?? []) {
+    for (const factId of finding.factIds ?? []) {
+      if (!factIds.has(factId)) {
+        errors.push(`fact validation ${finding.code} references unknown fact ${factId}`);
+      }
+    }
+  }
+  for (const fact of document.financialFacts ?? []) {
+    if (fact.warnings?.length && !findingFactIds.has(fact.id)) {
+      errors.push(`financial fact ${fact.id} warnings must appear in factValidation`);
+    }
+    for (const relatedId of [
+      ...(fact.relations?.duplicateOf ?? []),
+      ...(fact.relations?.conflictsWith ?? []),
+    ]) {
+      if (!factIds.has(relatedId)) {
+        errors.push(`financial fact ${fact.id} references unknown related fact ${relatedId}`);
+      }
+    }
+  }
 }
 
 function validateSourceLocation(source, page, label, errors) {
@@ -310,7 +406,9 @@ function validatePeriod(period, label, errors) {
 
 export async function validateContract(contractName, value) {
   const resolvedContract =
-    contractName === "analysis" ? `analysis:${value?.schemaVersion ?? "unknown"}` : contractName;
+    contractName === "analysis" || contractName === "extractedDocument"
+      ? `${contractName}:${value?.schemaVersion ?? "unknown"}`
+      : contractName;
   if (!schemaUrls[resolvedContract]) {
     return {
       valid: false,

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "0.2",
+  "documentId": "document-financial-001",
+  "source": {
+    "sourceId": "source-financial-001",
+    "inputType": "text",
+    "mediaType": "text/plain"
+  },
+  "pages": [
+    {
+      "pageNumber": 1,
+      "width": 612,
+      "height": 792,
+      "coordinateUnit": "pt",
+      "blocks": [
+        {
+          "id": "page-1-text-1",
+          "type": "text",
+          "order": 0,
+          "text": "Operating margin was 18% in Q2 2026.",
+          "source": {
+            "sourceId": "source-financial-001",
+            "pageNumber": 1,
+            "sectionPath": ["KPI summary"]
+          },
+          "confidence": 1,
+          "extraction": { "method": "pasted_text" },
+          "warnings": []
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "financialFacts": [
+    {
+      "id": "fact-1-page-1-text-1-1",
+      "label": "Operating margin",
+      "metric": {
+        "id": "operating-margin",
+        "name": "Operating margin"
+      },
+      "statementType": "kpi",
+      "displayedValue": "18%",
+      "parsedValue": 18,
+      "normalizedValue": 0.18,
+      "unit": "percentage",
+      "currency": null,
+      "scaleFactor": 0.01,
+      "period": {
+        "type": "quarter",
+        "label": "Q2 2026",
+        "startDate": "2026-04-01",
+        "endDate": "2026-06-30"
+      },
+      "scope": {
+        "entity": null,
+        "segment": null
+      },
+      "scenario": "actual",
+      "restatementStatus": "not_indicated",
+      "evidence": {
+        "sourceId": "source-financial-001",
+        "pageNumber": 1,
+        "blockId": "page-1-text-1",
+        "headerPath": ["KPI summary", "Operating margin"]
+      },
+      "confidence": {
+        "overall": 0.9,
+        "label": 1,
+        "metric": 1,
+        "statementType": 0.9,
+        "displayedValue": 1,
+        "parsedValue": 1,
+        "normalizedValue": 1,
+        "unit": 1,
+        "currency": 1,
+        "scaleFactor": 1,
+        "period": 1,
+        "scope": 0.9,
+        "scenario": 0.9,
+        "restatementStatus": 0.9,
+        "evidence": 1
+      },
+      "warnings": [],
+      "relations": {
+        "duplicateOf": [],
+        "conflictsWith": []
+      }
+    }
+  ],
+  "factValidation": []
+}
