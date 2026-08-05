@@ -30,28 +30,48 @@ const REGIONS = Object.freeze({
   secondary: Object.freeze({ x: 856, y: 144, width: 352, height: 504 }),
   footer: Object.freeze({ x: 72, y: 664, width: 1136, height: 32 }),
   background: Object.freeze({ x: 0, y: 0, width: 1280, height: 720 }),
+  "top-left": Object.freeze({ x: 72, y: 156, width: 548, height: 218 }),
+  "top-right": Object.freeze({ x: 660, y: 156, width: 548, height: 218 }),
+  "bottom-left": Object.freeze({ x: 72, y: 402, width: 548, height: 218 }),
+  "bottom-right": Object.freeze({ x: 660, y: 402, width: 548, height: 218 }),
 });
 
-function layout(allowedComponents, regionNames) {
+function layout(allowedComponents, regionNames, regionOverrides = {}) {
   return Object.freeze({
     canvas: CANVAS,
     typography: TYPOGRAPHY,
     allowedComponents: Object.freeze(allowedComponents),
     regions: Object.freeze(
-      Object.fromEntries(regionNames.map((name) => [name, REGIONS[name]])),
+      Object.fromEntries(
+        regionNames.map((name) => [name, regionOverrides[name] ?? REGIONS[name]]),
+      ),
     ),
   });
 }
 
 export const layoutRegistry = Object.freeze({
-  title: layout(["text", "image"], ["title", "body", "background", "footer"]),
+  title: layout(
+    ["text", "image"],
+    ["title", "body", "background", "footer"],
+    { body: Object.freeze({ x: 96, y: 402, width: 1088, height: 150 }) },
+  ),
   "executive-summary": layout(
     ["text", "metric", "insight"],
     ["title", "body", "left", "right", "footer"],
   ),
   "kpi-grid": layout(
     ["text", "metric"],
-    ["title", "body", "primary", "secondary", "footer"],
+    [
+      "title",
+      "body",
+      "primary",
+      "secondary",
+      "top-left",
+      "top-right",
+      "bottom-left",
+      "bottom-right",
+      "footer",
+    ],
   ),
   "financial-table": layout(["text", "table"], ["title", "body", "footer"]),
   chart: layout(
@@ -60,8 +80,27 @@ export const layoutRegistry = Object.freeze({
   ),
   insight: layout(
     ["text", "metric", "insight"],
-    ["title", "body", "primary", "secondary", "footer"],
+    [
+      "title",
+      "body",
+      "primary",
+      "secondary",
+      "top-left",
+      "top-right",
+      "bottom-left",
+      "bottom-right",
+      "footer",
+    ],
   ),
+  "key-drivers": layout(
+    ["text", "metric", "insight"],
+    ["body", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right", "footer"],
+  ),
+  "risks-actions": layout(
+    ["text", "insight"],
+    ["body", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right", "footer"],
+  ),
+  "sources-appendix": layout(["text", "table"], ["body", "footer"]),
 });
 
 const UNSAFE_CONTENT = /<\/?[a-z][^>]*>|javascript:|data:text\/html/i;
@@ -76,15 +115,17 @@ body{font-family:${THEME.fonts.body},${THEME.fonts.fallback};color:${cssColor(TH
 .slide{position:relative;width:1280px;height:720px;overflow:hidden;background:${cssColor(THEME.colors.canvas)}}
 .slide-title{position:absolute;left:72px;top:40px;width:1136px;height:72px;margin:0;
 font-family:${THEME.fonts.heading},${THEME.fonts.fallback};font-size:${THEME.typography.title.web}px;line-height:1.1;border-bottom:2px solid ${cssColor(THEME.colors.accent)}}
+.layout-title .slide-title{left:96px;top:190px;width:1088px;height:174px;border:0;font-size:${THEME.typography.deckTitle.web}px;line-height:1.05}
 .component{position:absolute;overflow:hidden;font-size:${THEME.typography.body.web}px;line-height:1.3}
 .text-heading,.text-callout{font-weight:700}.text-heading{font-size:${THEME.typography.heading.web}px}
-.text-caption{font-size:${THEME.typography.caption.web}px;color:${cssColor(THEME.colors.muted)}}.metric{text-align:center}
-.metric-value{display:block;color:${cssColor(THEME.colors.accent)};font-size:${THEME.typography.metric.web}px;font-weight:700}
-.insight{padding:28px;background:${cssColor(THEME.colors.surface)};border:1px solid ${cssColor(THEME.colors.border)};font-weight:700}
+.text-caption{font-size:${THEME.typography.caption.web}px;color:${cssColor(THEME.colors.muted)}}.metric{text-align:center;padding:20px;background:${cssColor(THEME.colors.surface)};border-top:4px solid ${cssColor(THEME.colors.accent)}}
+.metric-value{display:block;color:${cssColor(THEME.colors.accent)};font-size:${THEME.typography.metric.web}px;font-weight:700}.metric-negative .metric-value{color:${cssColor(THEME.colors.negative)}}
+.insight{padding:28px;background:${cssColor(THEME.colors.surface)};border-left:5px solid ${cssColor(THEME.colors.accent)};font-weight:700}
 .insight-positive{color:${cssColor(THEME.colors.positive)}}.insight-negative{color:${cssColor(THEME.colors.negative)}}
 .insight-warning{color:${cssColor(THEME.colors.warning)}}.insight-neutral{color:${cssColor(THEME.colors.muted)}}
-table{width:100%;border-collapse:collapse}th,td{padding:12px;border:1px solid ${cssColor(THEME.table.border)};text-align:left}
+table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;border-bottom:1px solid ${cssColor(THEME.table.border)};text-align:left}
 th{background:${cssColor(THEME.table.headerFill)};color:${cssColor(THEME.table.headerText)}}tbody tr:nth-child(even){background:${cssColor(THEME.table.stripeFill)}}
+.deck[data-density-profile="detailed"] table{font-size:16px;line-height:1.2}.deck[data-density-profile="detailed"] th,.deck[data-density-profile="detailed"] td{padding:4px 8px}
 .chart-data caption{text-align:left;font-weight:700;margin-bottom:12px}.slide-source-note{position:absolute;left:72px;top:684px;width:1136px;height:20px;overflow:hidden;color:${cssColor(THEME.sourceNote.color)};font-size:${THEME.sourceNote.webFontSize}px}
 .image{object-fit:contain} @media print{.deck{display:block;padding:0}.slide{break-after:page}}
 `.trim();
@@ -153,7 +194,7 @@ function sourceAttribute(component) {
   return sources ? ` data-sources="${escapeHtml(sources)}"` : "";
 }
 
-function sourceNote(slide) {
+export function formatSourceReferences(slide, maxLength = 180) {
   const references = new Map();
   for (const component of slide.components) {
     for (const source of component.sources ?? []) {
@@ -162,7 +203,16 @@ function sourceNote(slide) {
     }
   }
   const text = [...references.values()].join("; ");
-  return text ? `<div class="slide-source-note">Sources: ${escapeHtml(text)}</div>` : "";
+  if (!text) return "";
+  const complete = `Sources: ${text}`;
+  return complete.length <= maxLength
+    ? complete
+    : `${complete.slice(0, Math.max(maxLength - 1, 0)).trimEnd()}…`;
+}
+
+function sourceNote(slide) {
+  const text = formatSourceReferences(slide);
+  return text ? `<div class="slide-source-note">${escapeHtml(text)}</div>` : "";
 }
 
 function assetUrl(assetRef, assets) {
@@ -225,7 +275,10 @@ function renderComponent(component, region, assets, fitOverrides) {
     return `<div ${attributes.replace(`component ${component.type}`, `component text text-${component.variant}`)}>${escapeHtml(component.text)}</div>`;
   }
   if (component.type === "metric") {
-    return `<div ${attributes}><span class="metric-value">${escapeHtml(component.value.displayedValue)}</span><span>${escapeHtml(component.label)}</span></div>`;
+    const metricAttributes = component.value.value < 0
+      ? attributes.replace("component metric", "component metric metric-negative")
+      : attributes;
+    return `<div ${metricAttributes}><span class="metric-value">${escapeHtml(component.value.displayedValue)}</span><span>${escapeHtml(component.label)}</span></div>`;
   }
   if (component.type === "table") return `<div ${attributes}>${renderTable(component)}</div>`;
   if (component.type === "chart") return `<div ${attributes}>${renderChart(component)}</div>`;

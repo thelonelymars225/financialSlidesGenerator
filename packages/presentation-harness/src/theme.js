@@ -28,6 +28,7 @@ export const defaultPresentationTheme = freezeTheme({
     tableStripe: "F3F7F5",
   },
   typography: {
+    deckTitle: { ppt: 50, web: 64 },
     title: { ppt: 35, web: 44 },
     heading: { ppt: 28, web: 32 },
     body: { ppt: 20, web: 24 },

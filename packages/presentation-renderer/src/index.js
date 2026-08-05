@@ -1,16 +1,29 @@
 import PptxGenJS from "pptxgenjs";
 
-import { resolvePresentationTheme } from "@financial-slides/presentation-harness";
+import {
+  formatSourceReferences,
+  layoutRegistry,
+  resolvePresentationTheme,
+} from "@financial-slides/presentation-harness";
 
-function componentBox(index, count, theme) {
-  const { componentGap: gap, contentHeight, contentY, slideMarginX } = theme.spacing;
-  const height = (contentHeight - gap * Math.max(count - 1, 0)) / count;
+const PX_PER_INCH = 96;
+
+function componentBox(component, layoutId) {
+  const region = layoutRegistry[layoutId]?.regions[component.region];
+  if (!region) throw new Error(`Layout ${layoutId} does not define region ${component.region}`);
   return {
-    x: slideMarginX,
-    y: contentY + index * (height + gap),
-    w: 13.33 - slideMarginX * 2,
-    h: height,
+    x: region.x / PX_PER_INCH,
+    y: region.y / PX_PER_INCH,
+    w: region.width / PX_PER_INCH,
+    h: region.height / PX_PER_INCH,
   };
+}
+
+function displayTitle(title, maxLength = 76) {
+  if (title.length <= maxLength) return title;
+  const candidate = title.slice(0, maxLength - 1);
+  const boundary = candidate.lastIndexOf(" ");
+  return `${candidate.slice(0, boundary > maxLength * 0.6 ? boundary : undefined).trimEnd()}…`;
 }
 
 function chartType(pptx, requestedType, warnings) {
@@ -45,16 +58,13 @@ function tableRows(component, theme) {
   return [header, ...rows];
 }
 
-function sourceNote(spec) {
-  const references = new Map();
-  for (const component of spec.components) {
-    for (const source of component.sources ?? []) {
-      const label = `${source.documentId} p.${source.pageNumber}`;
-      references.set(label, label);
-    }
-  }
-  const text = [...references.values()].join("; ");
-  return text ? `Sources: ${text}` : "";
+function speakerNotes(spec, renderedTitle) {
+  const notes = [];
+  if (spec.speakerNotes) notes.push(spec.speakerNotes);
+  if (renderedTitle !== spec.title) notes.push(`[Full title]\n${spec.title}`);
+  const sources = formatSourceReferences(spec, Number.POSITIVE_INFINITY);
+  if (sources) notes.push(`[Sources]\n${sources}`);
+  return notes.join("\n\n");
 }
 
 function imageSource(assetRef, assets) {
@@ -97,8 +107,15 @@ function addComponent(pptx, slide, component, box, assets, warnings, theme) {
     slide.addShape(pptx.ShapeType.rect, {
       ...box,
       fill: { color: theme.colors.surface },
-      line: { color: theme.colors.border },
-      radius: 0.08,
+      line: { color: theme.colors.surface },
+    });
+    slide.addShape(pptx.ShapeType.rect, {
+      x: box.x,
+      y: box.y,
+      w: 0.05,
+      h: box.h,
+      fill: { color: theme.colors.accent },
+      line: { color: theme.colors.accent },
     });
     slide.addText(component.statement, {
       ...box,
@@ -112,11 +129,21 @@ function addComponent(pptx, slide, component, box, assets, warnings, theme) {
     return;
   }
   if (component.type === "metric") {
-    slide.addShape(pptx.ShapeType.roundRect, {
+    const metricColor = component.value.value < 0
+      ? theme.colors.negative
+      : theme.colors.accent;
+    slide.addShape(pptx.ShapeType.rect, {
       ...box,
       fill: { color: theme.colors.surface },
-      line: { color: theme.colors.border, pt: 1 },
-      radius: 0.08,
+      line: { color: theme.colors.surface, pt: 0 },
+    });
+    slide.addShape(pptx.ShapeType.rect, {
+      x: box.x,
+      y: box.y,
+      w: box.w,
+      h: 0.04,
+      fill: { color: metricColor },
+      line: { color: metricColor, pt: 0 },
     });
     slide.addText(component.value.displayedValue, {
       ...box,
@@ -124,7 +151,7 @@ function addComponent(pptx, slide, component, box, assets, warnings, theme) {
       y: box.y + 0.15,
       h: box.h * 0.58,
       bold: true,
-      color: theme.colors.accent,
+      color: metricColor,
       fontSize: theme.typography.metric.ppt,
       align: "center",
     });
@@ -148,9 +175,9 @@ function addComponent(pptx, slide, component, box, assets, warnings, theme) {
         color: theme.colors.ink,
         fill: theme.table.bodyFill,
         fontFace: theme.fonts.body,
-        fontSize: 18,
+        fontSize: component.rows.length > 8 ? 16 : 18,
         margin: 0.08,
-        rowH: Math.min(0.55, box.h / (component.rows.length + 1)),
+        rowH: Math.min(0.48, box.h / (component.rows.length + 1)),
       },
     );
     return;
@@ -212,37 +239,42 @@ export class PresentationRenderer {
     for (const spec of [...deckSpec.slides].sort((a, b) => a.order - b.order)) {
       const slide = pptx.addSlide();
       slide.background = { color: theme.colors.canvas };
-      slide.addText(spec.title, {
-        x: theme.spacing.slideMarginX,
-        y: theme.spacing.titleY,
-        w: 13.33 - theme.spacing.slideMarginX * 2,
-        h: theme.spacing.titleHeight,
+      const title = displayTitle(spec.title);
+      const isTitleSlide = spec.layoutId === "title";
+      slide.addText(title, {
+        x: isTitleSlide ? 1 : theme.spacing.slideMarginX,
+        y: isTitleSlide ? 1.98 : theme.spacing.titleY,
+        w: isTitleSlide ? 11.33 : 13.33 - theme.spacing.slideMarginX * 2,
+        h: isTitleSlide ? 1.82 : theme.spacing.titleHeight,
         bold: true,
         color: theme.colors.ink,
         fontFace: theme.fonts.heading,
-        fontSize: theme.typography.title.ppt,
+        fontSize: isTitleSlide ? theme.typography.deckTitle.ppt : theme.typography.title.ppt,
         margin: 0,
         breakLine: false,
+        valign: isTitleSlide ? "mid" : "top",
       });
-      slide.addShape(pptx.ShapeType.line, {
-        x: theme.spacing.slideMarginX,
-        y: theme.spacing.titleRuleY,
-        w: 13.33 - theme.spacing.slideMarginX * 2,
-        h: 0,
-        line: { color: theme.colors.accent, pt: 1.5 },
-      });
-      spec.components.forEach((component, index) => {
+      if (!isTitleSlide) {
+        slide.addShape(pptx.ShapeType.line, {
+          x: theme.spacing.slideMarginX,
+          y: theme.spacing.titleRuleY,
+          w: 13.33 - theme.spacing.slideMarginX * 2,
+          h: 0,
+          line: { color: theme.colors.accent, pt: 1.5 },
+        });
+      }
+      spec.components.forEach((component) => {
         addComponent(
           pptx,
           slide,
           component,
-          componentBox(index, spec.components.length, theme),
+          componentBox(component, spec.layoutId),
           assets,
           warnings,
           theme,
         );
       });
-      const sources = sourceNote(spec);
+      const sources = formatSourceReferences(spec);
       if (sources) {
         slide.addText(sources, {
           x: theme.spacing.slideMarginX,
@@ -255,7 +287,8 @@ export class PresentationRenderer {
           margin: 0,
         });
       }
-      if (spec.speakerNotes) slide.addNotes(spec.speakerNotes);
+      const notes = speakerNotes(spec, title);
+      if (notes) slide.addNotes(notes);
     }
 
     await pptx.writeFile({ fileName: outputPath, compression: true });

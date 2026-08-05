@@ -111,7 +111,7 @@
       "maxLength": 120
     },
     "region": {
-      "enum": ["title", "body", "left", "right", "primary", "secondary", "footer", "background"]
+      "enum": ["title", "body", "left", "right", "primary", "secondary", "footer", "background", "top-left", "top-right", "bottom-left", "bottom-right"]
     },
     "sourceRef": {
       "type": "object",
@@ -458,7 +458,10 @@
             "kpi-grid",
             "financial-table",
             "chart",
-            "insight"
+            "insight",
+            "key-drivers",
+            "risks-actions",
+            "sources-appendix"
           ]
         },
         "title": { "$ref": "#/$defs/title" },

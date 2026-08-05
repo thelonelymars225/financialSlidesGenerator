@@ -179,6 +179,9 @@ const allowedComponentsByLayout = {
   "financial-table": new Set(["text", "table"]),
   chart: new Set(["text", "chart", "insight"]),
   insight: new Set(["text", "metric", "insight"]),
+  "key-drivers": new Set(["text", "metric", "insight"]),
+  "risks-actions": new Set(["text", "insight"]),
+  "sources-appendix": new Set(["text", "table"]),
 };
 
 function semanticSlideSpecErrors(deck) {
