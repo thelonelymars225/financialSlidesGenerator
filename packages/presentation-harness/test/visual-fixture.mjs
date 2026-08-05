@@ -1,7 +1,7 @@
 const PROFILE = Object.freeze({
-  concise: Object.freeze({ range: [4, 6], insights: 1, bullets: 3, rows: 5, minFont: 18, spacing: 6, fit: 1, repair: 1 }),
-  balanced: Object.freeze({ range: [6, 10], insights: 2, bullets: 5, rows: 8, minFont: 16, spacing: 4, fit: 2, repair: 2 }),
-  detailed: Object.freeze({ range: [10, 16], insights: 3, bullets: 7, rows: 12, minFont: 14, spacing: 4, fit: 2, repair: 2 }),
+  concise: Object.freeze({ insights: 1, bullets: 3, rows: 5, minFont: 18, spacing: 6, fit: 1, repair: 1 }),
+  balanced: Object.freeze({ insights: 2, bullets: 5, rows: 8, minFont: 16, spacing: 4, fit: 2, repair: 2 }),
+  detailed: Object.freeze({ insights: 3, bullets: 7, rows: 12, minFont: 14, spacing: 4, fit: 2, repair: 2 }),
 });
 
 const documentId = "document-consolidated-financial-performance-report-fy2026-management-reviewed";
@@ -46,10 +46,9 @@ export function visualFixture(density = "balanced") {
   const sourceList = Array.from({ length: 10 }, (_, index) => source(index + 1));
   return {
     schemaVersion: "0.1",
-    densityContractVersion: "0.1",
+    densityContractVersion: "0.2",
     densityProfile: density,
     densityConstraints: {
-      targetSlideRange: profile.range,
       maxInsightsPerSlide: profile.insights,
       maxBulletsPerSlide: profile.bullets,
       maxTableRows: profile.rows,
@@ -58,6 +57,7 @@ export function visualFixture(density = "balanced") {
       appendixPolicy: density === "concise" ? "only-when-needed" : density === "detailed" ? "include-when-supported" : "evidence-dependent",
       preflight: { minFontSize: profile.minFont, minSpacing: profile.spacing, maxAutoFitPasses: profile.fit, maxRepairAttempts: profile.repair },
     },
+    requestedSlideCount: 8,
     deckId: `deck-layout-regression-${density}`,
     sourceAnalysisId: "analysis-layout-regression",
     sourceDocumentIds: [documentId],

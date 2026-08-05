@@ -191,6 +191,10 @@ function semanticSlideSpecErrors(deck) {
   const slideOrders = new Set();
   const componentIds = new Set();
 
+  if (deck.slides?.length !== deck.requestedSlideCount) {
+    errors.push("slides must match requestedSlideCount");
+  }
+
   for (const slide of deck.slides ?? []) {
     if (slideIds.has(slide.id)) {
       errors.push(`duplicate slide id ${slide.id}`);

@@ -123,19 +123,23 @@ describe("extraction → analysis → preview → PowerPoint integration", () =>
   });
 
   it("preserves measurable profile differences and source citations through polling", async () => {
-    const counts = { concise: 4, balanced: 8, detailed: 12 } as const;
+    const detail = {
+      concise: "Revenue grew.",
+      balanced: "Revenue grew 12% with enterprise renewals supporting the result.",
+      detailed: "Revenue grew 12% with enterprise renewals supporting the result; management should monitor margin pressure and renewal concentration.",
+    } as const;
     const observed: number[] = [];
 
-    for (const density of Object.keys(counts) as Array<keyof typeof counts>) {
+    for (const density of Object.keys(detail) as Array<keyof typeof detail>) {
       const terminal = { ...job("succeeded"), density };
-      const slides = Array.from({ length: counts[density] }, (_, index) => ({
+      const slides = Array.from({ length: terminal.slide_count }, (_, index) => ({
         id: `slide-${index + 1}`,
         order: index + 1,
         title: `Grounded slide ${index + 1}`,
         components: [{
           id: `source-${index + 1}`,
           type: "text",
-          text: "Revenue reached $12.4 million.",
+          text: detail[density],
           sources: [{ documentId: "document-1", pageNumber: 1, blockId: "block-1" }],
         }],
       }));
@@ -158,12 +162,15 @@ describe("extraction → analysis → preview → PowerPoint integration", () =>
 
       observed.push(flow.result!.slide_spec.slides.length);
       expect(flow.result!.slide_spec.densityProfile).toBe(density);
+      expect(flow.result!.slide_spec.slides[0]?.components[0]?.text).toBe(detail[density]);
       expect(flow.result!.slide_spec.slides.every((slide) =>
         slide.components[0]?.sources?.[0]?.blockId === "block-1"
       )).toBe(true);
     }
 
-    expect(observed).toEqual([4, 8, 12]);
+    expect(observed).toEqual([8, 8, 8]);
+    expect(detail.concise.length).toBeLessThan(detail.balanced.length);
+    expect(detail.balanced.length).toBeLessThan(detail.detailed.length);
   });
 
   it("keeps a typed renderer failure retryable and completes the same job", async () => {

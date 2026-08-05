@@ -142,7 +142,7 @@ export function ExtractionWorkspace() {
           </label>
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-stone-600 dark:text-stone-300">Slides</span>
-            <input className="w-full rounded-xl border border-stone-300 bg-stone-50 p-3 text-stone-900 outline-none focus:border-emerald-700 dark:border-white/15 dark:bg-black/20 dark:text-stone-100" type="number" min="5" max="20" value={slideCount} onChange={(event) => setSlideCount(Number(event.target.value))} />
+            <input className="w-full rounded-xl border border-stone-300 bg-stone-50 p-3 text-stone-900 outline-none focus:border-emerald-700 dark:border-white/15 dark:bg-black/20 dark:text-stone-100" type="number" min="4" max="20" value={slideCount} onChange={(event) => setSlideCount(Number(event.target.value))} />
           </label>
         </div>
 

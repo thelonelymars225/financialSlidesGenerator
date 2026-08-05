@@ -14,8 +14,6 @@ class PresentationDensity(StrEnum):
 
 @dataclass(frozen=True)
 class DensityConstraints:
-    target_slide_min: int
-    target_slide_max: int
     max_insights_per_slide: int
     max_bullets_per_slide: int
     max_table_rows: int
@@ -30,10 +28,6 @@ class DensityConstraints:
     def as_contract(self) -> dict[str, Any]:
         values = asdict(self)
         return {
-            "targetSlideRange": [
-                values.pop("target_slide_min"),
-                values.pop("target_slide_max"),
-            ],
             "maxInsightsPerSlide": values.pop("max_insights_per_slide"),
             "maxBulletsPerSlide": values.pop("max_bullets_per_slide"),
             "maxTableRows": values.pop("max_table_rows"),
@@ -52,8 +46,6 @@ class DensityConstraints:
 DENSITY_PROFILES: Mapping[PresentationDensity, DensityConstraints] = MappingProxyType(
     {
         PresentationDensity.CONCISE: DensityConstraints(
-            target_slide_min=4,
-            target_slide_max=6,
             max_insights_per_slide=1,
             max_bullets_per_slide=3,
             max_table_rows=5,
@@ -66,8 +58,6 @@ DENSITY_PROFILES: Mapping[PresentationDensity, DensityConstraints] = MappingProx
             max_repair_attempts=1,
         ),
         PresentationDensity.BALANCED: DensityConstraints(
-            target_slide_min=6,
-            target_slide_max=10,
             max_insights_per_slide=2,
             max_bullets_per_slide=5,
             max_table_rows=8,
@@ -80,8 +70,6 @@ DENSITY_PROFILES: Mapping[PresentationDensity, DensityConstraints] = MappingProx
             max_repair_attempts=2,
         ),
         PresentationDensity.DETAILED: DensityConstraints(
-            target_slide_min=10,
-            target_slide_max=16,
             max_insights_per_slide=3,
             max_bullets_per_slide=7,
             max_table_rows=12,
@@ -104,7 +92,7 @@ def resolve_density_profile(
     return profile, DENSITY_PROFILES[profile]
 
 
-def target_slide_count(requested: int, constraints: DensityConstraints) -> int:
-    if requested < 1:
-        raise ValueError("slide_count must be positive")
-    return min(max(requested, constraints.target_slide_min), constraints.target_slide_max)
+def resolve_slide_count(requested: int) -> int:
+    if not 4 <= requested <= 20:
+        raise ValueError("slide_count must be between 4 and 20")
+    return requested

@@ -6,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 from zipfile import ZipFile
 
+import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 
@@ -366,19 +367,29 @@ def test_generation_rejects_an_unknown_density(tmp_path) -> None:
         app.dependency_overrides.clear()
 
 
-def test_density_profiles_control_planning_without_inventing_content() -> None:
+@pytest.mark.parametrize("requested_count", [4, 8, 10])
+def test_density_changes_detail_without_changing_slide_count(requested_count: int) -> None:
     analysis = json.loads(ANALYSIS_EXAMPLE.read_text(encoding="utf-8"))
 
-    concise = build_slide_spec(analysis, "management-review", 8, density="concise")
-    balanced = build_slide_spec(analysis, "management-review", 8)
-    detailed = build_slide_spec(analysis, "management-review", 8, density="detailed")
+    concise = build_slide_spec(
+        analysis, "management-review", requested_count, density="concise"
+    )
+    balanced = build_slide_spec(analysis, "management-review", requested_count)
+    detailed = build_slide_spec(
+        analysis, "management-review", requested_count, density="detailed"
+    )
 
-    assert concise["densityProfile"] == "concise"
-    assert balanced["densityProfile"] == "balanced"
-    assert detailed["densityProfile"] == "detailed"
-    assert len(concise["slides"]) <= 6
-    assert len(balanced["slides"]) == 8
-    assert len(detailed["slides"]) <= 16
+    for spec in (concise, balanced, detailed):
+        assert spec["requestedSlideCount"] == requested_count
+        assert len(spec["slides"]) == requested_count
+    assert concise["densityConstraints"]["speakerNotesDepth"] == "minimal"
+    assert balanced["densityConstraints"]["speakerNotesDepth"] == "standard"
+    assert detailed["densityConstraints"]["speakerNotesDepth"] == "rich"
+    note_lengths = [
+        sum(len(slide.get("speakerNotes", "")) for slide in spec["slides"])
+        for spec in (concise, balanced, detailed)
+    ]
+    assert note_lengths[0] < note_lengths[1] < note_lengths[2]
     assert not any(
         component["type"] in {"table", "chart"}
         for slide in concise["slides"]
@@ -388,22 +399,23 @@ def test_density_profiles_control_planning_without_inventing_content() -> None:
         component["type"] == "chart"
         for slide in balanced["slides"]
         for component in slide["components"]
-    )
+    ) == (requested_count >= 4)
 
-    sparse = deepcopy(analysis)
-    sparse["metrics"] = sparse["metrics"][:1]
-    sparse["findings"] = []
-    sparse["executiveSummary"] = sparse["executiveSummary"][:1]
-    sparse["slideIntents"][0]["metricIds"] = [sparse["metrics"][0]["id"]]
-    sparse["slideIntents"][0]["findingIds"] = []
-    sparse_detailed = build_slide_spec(
-        sparse,
-        "management-review",
-        16,
-        density="detailed",
-    )
-    assert len(sparse_detailed["slides"]) < 10
-    assert all("-copy-" not in slide["id"] for slide in sparse_detailed["slides"])
+
+def test_sparse_analysis_is_filled_to_the_requested_count_with_grounded_content() -> None:
+    analysis = json.loads(ANALYSIS_EXAMPLE.read_text(encoding="utf-8"))
+    analysis["metrics"] = analysis["metrics"][:1]
+    analysis["findings"] = []
+    analysis["executiveSummary"] = analysis["executiveSummary"][:1]
+    analysis["slideIntents"] = analysis["slideIntents"][:1]
+    analysis["slideIntents"][0]["metricIds"] = [analysis["metrics"][0]["id"]]
+    analysis["slideIntents"][0]["findingIds"] = []
+
+    spec = build_slide_spec(analysis, "management-review", 10, density="detailed")
+
+    assert len(spec["slides"]) == 10
+    assert all(slide["components"] for slide in spec["slides"])
+    assert any("-copy-" in slide["id"] for slide in spec["slides"])
 
 
 def test_density_caps_table_rows() -> None:
@@ -468,6 +480,10 @@ def test_render_retry_reuses_successful_analysis(tmp_path) -> None:
 
     succeeded = service.get(generation_job.id, source_job.owner_id)
     assert succeeded.status.value == "succeeded"
+    assert succeeded.slide_count == 4
+    assert succeeded.density_profile.value == "balanced"
+    assert succeeded.slide_spec["requestedSlideCount"] == 4
+    assert len(succeeded.slide_spec["slides"]) == 4
     assert succeeded.analysis_telemetry is not None
     assert provider.calls == 1
     assert renderer.calls == 2

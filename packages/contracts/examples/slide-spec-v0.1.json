@@ -1,9 +1,8 @@
 {
   "schemaVersion": "0.1",
-  "densityContractVersion": "0.1",
+  "densityContractVersion": "0.2",
   "densityProfile": "balanced",
   "densityConstraints": {
-    "targetSlideRange": [6, 10],
     "maxInsightsPerSlide": 2,
     "maxBulletsPerSlide": 5,
     "maxTableRows": 8,
@@ -17,6 +16,7 @@
       "maxRepairAttempts": 2
     }
   },
+  "requestedSlideCount": 4,
   "deckId": "deck-q2-2026",
   "sourceAnalysisId": "analysis-q2-2026",
   "sourceDocumentIds": ["document-financial-report"],

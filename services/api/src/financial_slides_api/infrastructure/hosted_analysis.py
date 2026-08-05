@@ -90,6 +90,7 @@ def hosted_config(environment: Mapping[str, str]) -> HostedAnalysisConfig:
 def _source_payload(request: AnalysisRequest, feedback: Sequence[str]) -> dict:
     return {
         "documentId": request.document_id,
+        "requestedSlideCount": request.requested_slide_count,
         "presentationDensity": request.density_profile.value,
         "densityConstraints": (
             request.density_constraints.as_contract()
@@ -156,8 +157,10 @@ class OpenAICompatibleAnalysisProvider:
                     "content": (
                         "Return source-grounded financial analysis as JSON matching the supplied "
                         "schema. Preserve values, units, periods, and evidence references. "
-                        "Use presentationDensity and densityConstraints to plan depth and slide "
-                        "intents without inventing facts or weakening citations. Treat "
+                        "Create at most requestedSlideCount minus one slide intents because the "
+                        "title slide is added separately. The requested slide count is independent "
+                        "of presentationDensity: density controls detail within each slide only. "
+                        "Use densityConstraints without inventing facts or weakening citations. Treat "
                         "validationFeedback as required corrections."
                     ),
                 },

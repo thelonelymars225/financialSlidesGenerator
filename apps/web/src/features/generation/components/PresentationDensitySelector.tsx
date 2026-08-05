@@ -18,7 +18,7 @@ export function PresentationDensitySelector({
         Presentation detail
       </legend>
       <p className="mt-1 text-xs text-stone-500 dark:text-stone-400" id="density-help">
-        Controls slide count and depth. Source grounding and factual accuracy stay the same.
+        Controls detail within each slide. Slide count, source grounding, and factual accuracy stay the same.
       </p>
       <div className="mt-3 grid gap-2 sm:grid-cols-3" aria-describedby="density-help">
         {PRESENTATION_DENSITY_OPTIONS.map((option) => (
