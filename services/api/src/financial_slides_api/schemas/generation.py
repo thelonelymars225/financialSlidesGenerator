@@ -4,19 +4,29 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from financial_slides_api.domain.generation import GenerationJob
 
 
 class StartGenerationRequest(BaseModel):
     deck_type: Literal["management-review", "board-update", "investor-summary"]
+    request_key: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class GenerationFailureResponse(BaseModel):
     code: str
     message: str
     retryable: bool
+
+
+class AnalysisTelemetryResponse(BaseModel):
+    mode: Literal["hosted", "deterministic"]
+    provider: str
+    model: str
+    fallback_used: bool
+    provider_calls: int
+    external_cost_usd: float
 
 
 class GenerationJobResponse(BaseModel):
@@ -31,6 +41,7 @@ class GenerationJobResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     failure: GenerationFailureResponse | None
+    analysis: AnalysisTelemetryResponse | None
 
     @classmethod
     def from_job(cls, job: GenerationJob) -> "GenerationJobResponse":
@@ -52,6 +63,22 @@ class GenerationJobResponse(BaseModel):
                     retryable=job.failure.retryable,
                 )
                 if job.failure
+                else None
+            ),
+            analysis=(
+                AnalysisTelemetryResponse(
+                    mode=(
+                        "deterministic"
+                        if job.analysis_telemetry.provider == "deterministic"
+                        else "hosted"
+                    ),
+                    provider=job.analysis_telemetry.provider,
+                    model=job.analysis_telemetry.model,
+                    fallback_used=job.analysis_telemetry.fallback_used,
+                    provider_calls=job.analysis_telemetry.provider_calls,
+                    external_cost_usd=job.analysis_telemetry.external_cost_usd,
+                )
+                if job.analysis_telemetry
                 else None
             ),
         )

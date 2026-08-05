@@ -13,6 +13,15 @@ export type GenerationFailure = {
   retryable: boolean;
 };
 
+export type AnalysisTelemetry = {
+  mode: "hosted" | "deterministic";
+  provider: string;
+  model: string;
+  fallback_used: boolean;
+  provider_calls: number;
+  external_cost_usd: number;
+};
+
 export type GenerationJob = {
   id: string;
   extraction_job_id: string;
@@ -25,6 +34,7 @@ export type GenerationJob = {
   created_at: string;
   updated_at: string;
   failure: GenerationFailure | null;
+  analysis: AnalysisTelemetry | null;
 };
 
 export type SlideSource = {

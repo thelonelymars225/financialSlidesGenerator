@@ -21,6 +21,7 @@ function job(status: GenerationJob["status"], attemptCount = 1): GenerationJob {
     created_at: "2026-07-25T12:00:00Z",
     updated_at: "2026-07-25T12:00:01Z",
     failure: null,
+    analysis: null,
   };
 }
 
@@ -61,7 +62,7 @@ describe("extraction → analysis → preview → PowerPoint integration", () =>
         },
       }),
     ];
-    const fetcher = vi.fn(async () => responses.shift()!);
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => responses.shift()!);
     const api = createGenerationApi(fetcher as typeof fetch);
     const flow = await generatePollAndLoad(
       api,
@@ -76,6 +77,12 @@ describe("extraction → analysis → preview → PowerPoint integration", () =>
     expect(markup).not.toContain("dangerouslySetInnerHTML");
     expect(artifact.type).toContain("presentationml.presentation");
     expect(fetcher).toHaveBeenCalledTimes(6);
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({
+        deck_type: "management-review",
+        request_key: `auto:${extractionJobId}:management-review`,
+      }),
+    );
   });
 
   it("keeps a typed renderer failure retryable and completes the same job", async () => {

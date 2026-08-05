@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import subprocess
@@ -60,7 +61,11 @@ class RecordingRenderer:
 
 
 class FinancialReportProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def analyze(self, request, validation_feedback) -> ProviderAnalysis:
+        self.calls += 1
         del validation_feedback
         output = deepcopy(json.loads(ANALYSIS_EXAMPLE.read_text(encoding="utf-8")))
         output["sourceDocumentIds"] = [request.document_id]
@@ -157,7 +162,7 @@ def test_extracted_document_to_preview_and_powerpoint_download(tmp_path) -> None
         started = client.post(
             f"/api/jobs/{extraction_job.id}/slides",
             headers=OWNER_HEADERS,
-            json={"deck_type": "management-review"},
+            json={"deck_type": "management-review", "request_key": "automatic-flow"},
         )
         assert started.status_code == 202
         generation_job = started.json()
@@ -178,6 +183,14 @@ def test_extracted_document_to_preview_and_powerpoint_download(tmp_path) -> None
 
         assert status.json()["status"] == "succeeded"
         assert status.json()["progress"] == 100
+        assert result.json()["job"]["analysis"] == {
+            "mode": "deterministic",
+            "provider": "deterministic",
+            "model": "fixture-v1",
+            "fallback_used": False,
+            "provider_calls": 1,
+            "external_cost_usd": 0.0,
+        }
         Draft202012Validator(json.loads(SLIDE_SCHEMA.read_text(encoding="utf-8"))).validate(
             result.json()["slide_spec"]
         )
@@ -203,7 +216,7 @@ def test_thin_end_to_end_prototype_preserves_financial_content(tmp_path) -> None
         started = client.post(
             f"/api/jobs/{extraction_job.id}/slides",
             headers=OWNER_HEADERS,
-            json={"deck_type": "management-review"},
+            json={"deck_type": "management-review", "request_key": "rich-flow"},
         )
         assert started.status_code == 202
         job_id = started.json()["id"]
@@ -263,7 +276,7 @@ def test_typed_render_failure_can_retry_once(tmp_path) -> None:
         started = client.post(
             f"/api/jobs/{extraction_job.id}/slides",
             headers=OWNER_HEADERS,
-            json={"deck_type": "management-review"},
+            json={"deck_type": "management-review", "request_key": "retry-flow"},
         )
         job_id = started.json()["id"]
         failed = client.get(f"/api/slide-jobs/{job_id}", headers=OWNER_HEADERS)
@@ -285,6 +298,74 @@ def test_typed_render_failure_can_retry_once(tmp_path) -> None:
         assert renderer.calls == 2
     finally:
         app.dependency_overrides.clear()
+
+
+def test_start_is_idempotent_for_the_same_automatic_request(tmp_path) -> None:
+    renderer = RecordingRenderer()
+    service, extraction_job = generation_fixture(tmp_path, renderer)
+
+    first = service.start(
+        extraction_job.id,
+        extraction_job.owner_id,
+        "management-review",
+        "auto:stable",
+    )
+    repeated = service.start(
+        extraction_job.id,
+        extraction_job.owner_id,
+        "management-review",
+        "auto:stable",
+    )
+    asyncio.run(service.run(first.id))
+    asyncio.run(service.run(repeated.id))
+
+    assert repeated.id == first.id
+    assert renderer.calls == 1
+
+
+def test_render_retry_reuses_successful_analysis(tmp_path) -> None:
+    store = SQLiteJobStore(tmp_path / "stage-aware.sqlite3")
+    extraction = ExtractionJobService(store, store, store)
+    source_job = extraction.create(
+        CreateJobCommand(
+            owner_id="integration-owner",
+            input_mode="text",
+            source_text="Quarterly revenue\nQ1 2026 | $10.0m\nQ2 2026 | $12.4m",
+            file_name=None,
+            file_data=None,
+            declared_media_type=None,
+            deck_purpose="management-review",
+            slide_count=4,
+            request_key="stage-aware-source",
+        )
+    )
+    assert ExtractionJobWorker(store).run_available() == 1
+    provider = FinancialReportProvider()
+    renderer = RecordingRenderer(fail_once=True)
+    service = SlideGenerationService(
+        extraction,
+        FinancialAnalysisService(provider),
+        renderer,
+    )
+    generation_job = service.start(
+        source_job.id,
+        source_job.owner_id,
+        "management-review",
+        "stage-aware-generation",
+    )
+
+    asyncio.run(service.run(generation_job.id))
+    failed = service.get(generation_job.id, source_job.owner_id)
+    assert failed.status.value == "failed"
+    assert failed.slide_spec is not None
+    service.retry(generation_job.id, source_job.owner_id)
+    asyncio.run(service.run(generation_job.id))
+
+    succeeded = service.get(generation_job.id, source_job.owner_id)
+    assert succeeded.status.value == "succeeded"
+    assert succeeded.analysis_telemetry is not None
+    assert provider.calls == 1
+    assert renderer.calls == 2
 
 
 def test_node_adapter_produces_an_editable_powerpoint_archive(tmp_path) -> None:

@@ -53,7 +53,12 @@ def start_generation(
     owner_id: OwnerId = "local-development",
 ) -> GenerationJobResponse:
     try:
-        job = service.start(str(extraction_job_id), owner_id, request.deck_type)
+        job = service.start(
+            str(extraction_job_id),
+            owner_id,
+            request.deck_type,
+            request.request_key or f"auto:{extraction_job_id}:{request.deck_type}",
+        )
     except JobNotFoundError as error:
         raise _not_found(error) from error
     except (JobNotReadyError, GenerationConflictError) as error:

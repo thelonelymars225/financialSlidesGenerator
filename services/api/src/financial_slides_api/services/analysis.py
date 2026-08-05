@@ -338,6 +338,7 @@ class FinancialAnalysisService:
                         input_tokens=totals.input_tokens,
                         output_tokens=totals.output_tokens,
                         external_cost_usd=totals.external_cost_usd,
+                        fallback_used=False,
                     ),
                 )
             feedback = validation_errors[:MAX_FEEDBACK_ERRORS]
@@ -386,6 +387,7 @@ class FinancialAnalysisService:
                             input_tokens=totals.input_tokens,
                             output_tokens=totals.output_tokens,
                             external_cost_usd=totals.external_cost_usd,
+                            fallback_used=True,
                         ),
                     )
 

@@ -158,6 +158,7 @@ export function ExtractionWorkspace() {
         <>
           <ExtractionResultPreview result={extraction.result.data} />
           <SlideGenerationPanel
+            key={extraction.result.data.job.id}
             extractionJobId={extraction.result.data.job.id}
             deckType={deckPurpose}
           />

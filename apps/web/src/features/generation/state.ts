@@ -8,6 +8,13 @@ export function generationPollInterval(status: GenerationStatus | undefined): nu
   return isTerminalGeneration(status) ? false : 1_000;
 }
 
+export function automaticGenerationRequestKey(
+  extractionJobId: string,
+  deckType: string,
+): string {
+  return `auto:${extractionJobId}:${deckType}`;
+}
+
 export function generationFailureGuidance(
   failure: GenerationFailure | null | undefined,
 ): string {

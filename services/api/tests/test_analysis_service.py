@@ -161,6 +161,7 @@ def test_repair_exhaustion_uses_validated_grounded_fallback() -> None:
     assert provider.calls == 2
     assert result.telemetry.provider == "deterministic"
     assert result.telemetry.provider_calls == 3
+    assert result.telemetry.fallback_used is True
     assert result.telemetry.repair_attempts == 1
     assert result.analysis["metrics"][0]["displayedValue"] == "$12.4 million"
 
