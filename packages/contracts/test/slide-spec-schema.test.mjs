@@ -37,6 +37,15 @@ test("requires a resolved presentation density contract", async () => {
   }
 });
 
+test("requires the rendered slide count to match the independent request", async () => {
+  const deck = await slideSpec();
+  deck.requestedSlideCount = 8;
+
+  const result = await validateContract("slideSpec", deck);
+  assert.equal(result.valid, false);
+  assert.match(result.errors.join("\n"), /slides must match requestedSlideCount/);
+});
+
 test("rejects arbitrary markup, URLs, layouts, components, and assets", async () => {
   const markup = await slideSpec();
   markup.slides[0].components[0].text = "<script>alert('x')</script>";

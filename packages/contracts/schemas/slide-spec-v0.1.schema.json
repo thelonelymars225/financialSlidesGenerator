@@ -10,6 +10,7 @@
     "densityContractVersion",
     "densityProfile",
     "densityConstraints",
+    "requestedSlideCount",
     "deckId",
     "sourceAnalysisId",
     "sourceDocumentIds",
@@ -20,9 +21,10 @@
   ],
   "properties": {
     "schemaVersion": { "const": "0.1" },
-    "densityContractVersion": { "const": "0.1" },
+    "densityContractVersion": { "const": "0.2" },
     "densityProfile": { "enum": ["concise", "balanced", "detailed"] },
     "densityConstraints": { "$ref": "#/$defs/densityConstraints" },
+    "requestedSlideCount": { "type": "integer", "minimum": 4, "maximum": 20 },
     "deckId": { "$ref": "#/$defs/id" },
     "sourceAnalysisId": { "$ref": "#/$defs/id" },
     "sourceDocumentIds": {
@@ -47,7 +49,6 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "targetSlideRange",
         "maxInsightsPerSlide",
         "maxBulletsPerSlide",
         "maxTableRows",
@@ -57,16 +58,6 @@
         "preflight"
       ],
       "properties": {
-        "targetSlideRange": {
-          "type": "array",
-          "prefixItems": [
-            { "type": "integer", "minimum": 1 },
-            { "type": "integer", "minimum": 1 }
-          ],
-          "items": false,
-          "minItems": 2,
-          "maxItems": 2
-        },
         "maxInsightsPerSlide": { "type": "integer", "minimum": 1 },
         "maxBulletsPerSlide": { "type": "integer", "minimum": 1 },
         "maxTableRows": { "type": "integer", "minimum": 1 },

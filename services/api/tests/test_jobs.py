@@ -236,13 +236,14 @@ def test_api_submit_poll_result_and_typed_failure(tmp_path) -> None:
                 "input_mode": "text",
                 "source_text": "Revenue increased by 14%.",
                 "deck_purpose": "management-review",
-                "slide_count": 8,
+                "slide_count": 4,
                 "request_key": "api-success",
             },
         )
         assert submitted.status_code == 202
         job_id = submitted.json()["id"]
         assert submitted.json()["status"] == "queued"
+        assert submitted.json()["slide_count"] == 4
 
         worker = ExtractionJobWorker(store, SuccessfulExtraction(), clock=clock)
         assert worker.run_available() == 1

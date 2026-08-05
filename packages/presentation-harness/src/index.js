@@ -150,18 +150,15 @@ function assertSafe(value, label) {
 
 export function densityPreflightPolicy(deckSpec) {
   if (
-    deckSpec?.densityContractVersion !== "0.1" ||
+    deckSpec?.densityContractVersion !== "0.2" ||
     !["concise", "balanced", "detailed"].includes(deckSpec.densityProfile)
   ) {
-    throw new Error("Presentation density contract v0.1 is required");
+    throw new Error("Presentation density contract v0.2 is required");
   }
   const constraints = deckSpec.densityConstraints;
   const preflight = constraints?.preflight;
   if (
-    !constraints ||
-    !Array.isArray(constraints.targetSlideRange) ||
-    constraints.targetSlideRange.length !== 2 ||
-    !preflight
+    !constraints || !preflight
   ) {
     throw new Error("Resolved presentation density constraints are required");
   }

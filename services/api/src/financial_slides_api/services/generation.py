@@ -26,7 +26,7 @@ from financial_slides_api.domain.presentation import (
     DensityConstraints,
     PresentationDensity,
     resolve_density_profile,
-    target_slide_count,
+    resolve_slide_count,
 )
 from financial_slides_api.infrastructure.audit import MetadataAuditLogger, NullAuditSink
 from financial_slides_api.infrastructure.deterministic_analysis import (
@@ -82,7 +82,9 @@ def _value(metric: dict[str, Any]) -> dict[str, Any]:
 
 def _speaker_notes(sources: list[dict[str, Any]], depth: str) -> str:
     citations = (
-        f"{source['documentId']} p.{source['pageNumber']} {source['blockId']}" for source in sources
+        f"{source['documentId']} p.{source['pageNumber']}"
+        + (f" {source['blockId']}" if depth != "minimal" else "")
+        for source in sources
     )
     notes = f"Sources: {'; '.join(citations)}"
     if depth == "rich":
@@ -211,15 +213,11 @@ def _copy_slide(slide: dict[str, Any], copy_number: int) -> dict[str, Any]:
 def _fit_slide_count(
     slides: list[dict[str, Any]],
     slide_count: int,
-    *,
-    repeat_content: bool,
 ) -> list[dict[str, Any]]:
-    if slide_count < 1:
-        raise ValueError("slide_count must be positive")
     fitted = slides[:slide_count]
     content = fitted[1:]
     copy_number = 1
-    while repeat_content and len(fitted) < slide_count:
+    while len(fitted) < slide_count:
         if not content:
             raise ValueError("analysis did not contain enough renderable content")
         source = content[(copy_number - 1) % len(content)]
@@ -239,7 +237,7 @@ def build_slide_spec(
     """Map validated analysis to the narrow, approved slide contract."""
 
     density_profile, constraints = resolve_density_profile(density)
-    planning_target = target_slide_count(slide_count, constraints)
+    planning_target = resolve_slide_count(slide_count)
 
     slides: list[dict[str, Any]] = [
         {
@@ -406,13 +404,13 @@ def build_slide_spec(
     slides = _fit_slide_count(
         slides,
         planning_target,
-        repeat_content=density_profile is PresentationDensity.BALANCED,
     )
     return {
         "schemaVersion": "0.1",
-        "densityContractVersion": "0.1",
+        "densityContractVersion": "0.2",
         "densityProfile": density_profile.value,
         "densityConstraints": constraints.as_contract(),
+        "requestedSlideCount": planning_target,
         "deckId": f"deck-{analysis['analysisId']}",
         "sourceAnalysisId": analysis["analysisId"],
         "sourceDocumentIds": analysis["sourceDocumentIds"],
@@ -518,7 +516,11 @@ class SlideGenerationService:
             slide_spec = job.slide_spec
             if slide_spec is None:
                 _, document = self._extraction.result(job.extraction_job_id, job.owner_id)
-                analysis = await self._analysis.analyze(document, density=job.density_profile)
+                analysis = await self._analysis.analyze(
+                    document,
+                    density=job.density_profile,
+                    slide_count=job.slide_count,
+                )
                 slide_spec = build_slide_spec(
                     analysis.analysis,
                     job.deck_type,

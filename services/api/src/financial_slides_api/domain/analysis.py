@@ -58,6 +58,7 @@ class AnalysisSourceBlock:
 class AnalysisRequest:
     document_id: str
     blocks: tuple[AnalysisSourceBlock, ...]
+    requested_slide_count: int
     density_profile: PresentationDensity = PresentationDensity.BALANCED
     density_constraints: DensityConstraints | None = None
 

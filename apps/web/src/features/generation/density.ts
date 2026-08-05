@@ -7,19 +7,19 @@ export const PRESENTATION_DENSITY_OPTIONS = Object.freeze([
     value: "concise",
     label: "Concise",
     summary: "Fast executive scan",
-    detail: "About 4–6 slides with essential insights and minimal notes.",
+    detail: "Essential insights with shorter content and minimal notes on each slide.",
   },
   {
     value: "balanced",
     label: "Balanced",
     summary: "Recommended",
-    detail: "About 6–10 slides with moderate depth, cost, and supporting evidence.",
+    detail: "Moderate detail and supporting evidence on each slide.",
   },
   {
     value: "detailed",
     label: "Detailed",
     summary: "Greater depth",
-    detail: "Up to 16 slides with richer notes and supported tables—not greater accuracy.",
+    detail: "Richer detail, notes, and supported tables on each slide—not greater accuracy.",
   },
 ] satisfies ReadonlyArray<{
   value: PresentationDensity;

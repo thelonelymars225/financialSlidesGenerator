@@ -62,7 +62,9 @@ def test_deepseek_uses_safe_current_defaults_and_json_mode() -> None:
         },
         transport=httpx2.MockTransport(handler),
     )
-    result = asyncio.run(FinancialAnalysisService(provider).analyze(source_document()))
+    result = asyncio.run(
+        FinancialAnalysisService(provider).analyze(source_document(), slide_count=10)
+    )
 
     sent = json.loads(requests[0].content)
     assert isinstance(provider, DeepSeekAnalysisProvider)
@@ -192,7 +194,9 @@ def test_hosted_provider_sends_minimal_context_and_maps_usage() -> None:
         config(),
         transport=httpx2.MockTransport(handler),
     )
-    result = asyncio.run(FinancialAnalysisService(provider).analyze(source_document()))
+    result = asyncio.run(
+        FinancialAnalysisService(provider).analyze(source_document(), slide_count=10)
+    )
 
     sent = json.loads(requests[0].content)
     user_payload = json.loads(sent["messages"][1]["content"])
@@ -203,10 +207,13 @@ def test_hosted_provider_sends_minimal_context_and_maps_usage() -> None:
         "blocks",
         "presentationDensity",
         "densityConstraints",
+        "requestedSlideCount",
         "validationFeedback",
     }
     assert user_payload["presentationDensity"] == "balanced"
-    assert user_payload["densityConstraints"]["targetSlideRange"] == [6, 10]
+    assert user_payload["requestedSlideCount"] == 10
+    assert "targetSlideRange" not in user_payload["densityConstraints"]
+    assert "independent" in sent["messages"][0]["content"]
     assert "pages" not in user_payload
     assert sent["response_format"]["json_schema"]["schema"]["title"] == "Analysis v0.2"
     assert result.telemetry.provider == "openai-compatible"

@@ -25,6 +25,7 @@ from financial_slides_api.domain.analysis import (
 from financial_slides_api.domain.presentation import (
     PresentationDensity,
     resolve_density_profile,
+    resolve_slide_count,
 )
 from financial_slides_api.ports.analysis import AnalysisProvider
 
@@ -141,6 +142,7 @@ def _block_text(block: dict[str, Any]) -> str:
 def build_analysis_request(
     document: dict[str, Any],
     density: PresentationDensity | str = PresentationDensity.BALANCED,
+    slide_count: int = 8,
 ) -> AnalysisRequest:
     """Keep only evidence-bearing content needed by a model provider."""
 
@@ -160,6 +162,7 @@ def build_analysis_request(
     return AnalysisRequest(
         document_id=document["documentId"],
         blocks=blocks,
+        requested_slide_count=resolve_slide_count(slide_count),
         density_profile=profile,
         density_constraints=constraints,
     )
@@ -177,8 +180,6 @@ def density_analysis_errors(
     errors: list[str] = []
     if len(analysis.get("executiveSummary", ())) > constraints.max_bullets_per_slide:
         errors.append("executiveSummary exceeds the resolved density bullet limit")
-    if len(analysis.get("slideIntents", ())) > constraints.target_slide_max - 1:
-        errors.append("slideIntents exceed the resolved density slide limit")
     return tuple(errors)
 
 
@@ -307,6 +308,7 @@ class FinancialAnalysisService:
         document: dict[str, Any],
         *,
         density: PresentationDensity | str = PresentationDensity.BALANCED,
+        slide_count: int = 8,
         is_cancelled: Callable[[], bool] = lambda: False,
     ) -> AnalysisResult:
         source_errors = _schema_errors(self._source_validator, document)
@@ -316,7 +318,7 @@ class FinancialAnalysisService:
                 "source document does not satisfy extracted-document-v0.1",
             )
 
-        request = build_analysis_request(document, density)
+        request = build_analysis_request(document, density, slide_count)
         feedback: tuple[str, ...] = ()
         totals = ProviderTelemetry(provider="unknown", model="unknown")
         started = self._timer()

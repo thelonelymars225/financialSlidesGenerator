@@ -21,7 +21,7 @@ class CreateJobRequest(BaseModel):
     file_content_base64: str | None = None
     declared_media_type: str | None = None
     deck_purpose: Literal["management-review", "board-update", "investor-summary"]
-    slide_count: int = Field(ge=5, le=20)
+    slide_count: int = Field(ge=4, le=20)
     request_key: str | None = Field(default=None, min_length=1, max_length=128)
 
     @model_validator(mode="after")
