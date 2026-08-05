@@ -1,4 +1,5 @@
 import type { DeckPurpose } from "../extraction/types";
+import type { PresentationDensity } from "./density";
 
 export type GenerationStatus =
   | "queued"
@@ -27,6 +28,7 @@ export type GenerationJob = {
   extraction_job_id: string;
   deck_type: DeckPurpose;
   slide_count: number;
+  density?: PresentationDensity;
   status: GenerationStatus;
   progress: number;
   attempt_count: number;
@@ -63,6 +65,7 @@ export type SlideComponent = {
 export type SlideSpec = {
   title: string;
   subtitle?: string;
+  densityProfile?: PresentationDensity;
   slides: Array<{
     id: string;
     order: number;

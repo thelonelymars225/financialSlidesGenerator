@@ -1,5 +1,9 @@
 import type { DeckPurpose } from "../extraction/types";
 import type { GenerationJob, GenerationResult } from "./types";
+import {
+  DEFAULT_PRESENTATION_DENSITY,
+  type PresentationDensity,
+} from "./density";
 import { apiUrl } from "../../api-url";
 
 export class GenerationApiError extends Error {
@@ -33,11 +37,16 @@ export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-d
       extractionJobId: string,
       deckType: DeckPurpose,
       requestKey: string,
+      density: PresentationDensity = DEFAULT_PRESENTATION_DENSITY,
     ): Promise<GenerationJob> {
       const response = await fetcher(apiUrl(`/api/jobs/${encodeURIComponent(extractionJobId)}/slides`), {
         method: "POST",
         headers: { "content-type": "application/json", ...ownerHeaders(ownerId) },
-        body: JSON.stringify({ deck_type: deckType, request_key: requestKey }),
+        body: JSON.stringify({
+          deck_type: deckType,
+          density,
+          request_key: requestKey,
+        }),
       });
       return parseResponse<GenerationJob>(response);
     },
