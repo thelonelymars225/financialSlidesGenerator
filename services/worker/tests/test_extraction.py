@@ -22,12 +22,13 @@ from financial_slides_worker.extraction import (
     FallbackReason,
     FileSource,
     MediaTypeMismatchError,
+    OcrFailedError,
     ProviderPageResult,
     SelectivePageFallback,
     TextSource,
     UnsupportedFileError,
 )
-from financial_slides_worker.extraction.native import PdfPlumberExtractor, _page_route
+from financial_slides_worker.extraction.native import PdfPlumberExtractor, _page_blocks, _page_route
 from financial_slides_worker.extraction.ocr import (
     OcrFailure,
     OcrPage,
@@ -210,6 +211,49 @@ def test_pdf_signature_routes_without_trusting_extension(tmp_path: Path) -> None
     assert result.telemetry.route == "native_pdf"
     assert result.telemetry.external_cost_usd == 0
     validate_contract(result.document, tmp_path)
+
+
+def test_partial_numeric_strip_table_falls_back_to_complete_row_text() -> None:
+    class PartialTable:
+        bbox = (300.0, 100.0, 370.0, 140.0)
+
+    class PartialTablePage:
+        width = 600.0
+
+        def find_tables(self):
+            return [PartialTable()]
+
+        def extract_words(self, **kwargs):
+            assert kwargs["y_tolerance"] == 3.0
+            tokens = (
+                ("Adjusted", 20, 106, 72),
+                ("net", 78, 106, 98),
+                ("income", 104, 106, 144),
+                ("(TotalEnergies", 150, 106, 238),
+                ("share)(1)", 244, 106, 294),
+                ("7,770", 310, 100, 350),
+                ("9,784", 420, 101, 460),
+                ("-21%", 520, 101, 554),
+            )
+            return [
+                {"text": text, "x0": x0, "x1": x1, "top": top, "bottom": top + 8}
+                for text, x0, top, x1 in tokens
+            ]
+
+    blocks = _page_blocks(PartialTablePage(), "source-test", 10)
+
+    assert not any(block["type"] == "table" for block in blocks)
+    row = next(block for block in blocks if block["type"] == "text")
+    assert row["text"] == (
+        "Adjusted net income (TotalEnergies share)(1) 7,770 9,784 -21%"
+    )
+    assert row["source"]["boundingBox"] == {
+        "left": 20.0,
+        "top": 100.0,
+        "right": 554.0,
+        "bottom": 114.0,
+        "unit": "pt",
+    }
 
 
 @pytest.mark.parametrize(
@@ -452,27 +496,52 @@ def test_mixed_pdf_routes_only_scanned_page_to_ocr(tmp_path: Path) -> None:
     validate_contract(result.document, tmp_path)
 
 
-def test_ocr_failure_and_ocr_page_limit_are_flagged_without_unbounded_work() -> None:
+def test_image_only_ocr_failure_returns_typed_error() -> None:
     scan = scanned_pdf("Operating expenses were $12.4m")
     failed_engine = FakeOcrEngine([OcrFailure("fixture failure")])
-    failed = ExtractionService(extractors=(PdfPlumberExtractor(failed_engine),)).extract_file(
-        FileSource(data=scan, file_name="failed.pdf")
-    )
-    limited_engine = FakeOcrEngine([ocr_page()])
-    limited = ExtractionService(
-        extractors=(PdfPlumberExtractor(limited_engine),),
-        limits=ExtractionLimits(max_ocr_pages=0),
-    ).extract_file(FileSource(data=scan, file_name="limited.pdf"))
 
+    with pytest.raises(OcrFailedError) as raised:
+        ExtractionService(extractors=(PdfPlumberExtractor(failed_engine),)).extract_file(
+            FileSource(data=scan, file_name="failed.pdf")
+        )
+
+    assert raised.value.code == "ocr_failed"
     assert failed_engine.calls == 1
-    assert any(warning["code"] == "ocr.failed" for warning in failed.document["warnings"])
-    assert any(
-        warning["code"] == "page.no_extractable_content" for warning in failed.document["warnings"]
-    )
+
+
+def test_ocr_page_limit_cannot_return_a_successful_empty_document() -> None:
+    scan = scanned_pdf("Operating expenses were $12.4m")
+    limited_engine = FakeOcrEngine([ocr_page()])
+
+    with pytest.raises(OcrFailedError) as raised:
+        ExtractionService(
+            extractors=(PdfPlumberExtractor(limited_engine),),
+            limits=ExtractionLimits(max_ocr_pages=0),
+        ).extract_file(FileSource(data=scan, file_name="limited.pdf"))
+
+    assert raised.value.code == "ocr_failed"
     assert limited_engine.calls == 0
-    assert any(
-        warning["code"] == "ocr.page_limit_exceeded" for warning in limited.document["warnings"]
+
+
+def test_mixed_document_succeeds_when_decorative_page_ocr_fails(tmp_path: Path) -> None:
+    engine = FakeOcrEngine([OcrFailure("fixture failure")])
+    service = ExtractionService(extractors=(PdfPlumberExtractor(engine),))
+    source = mixed_pdf(
+        fixture_bytes("native-financial-report.pdf.b64"),
+        scanned_pdf(""),
     )
+
+    result = service.extract_file(FileSource(data=source, file_name="mixed-decorative.pdf"))
+
+    assert engine.calls == 1
+    assert result.document["pages"][0]["blocks"]
+    assert result.document["pages"][1]["blocks"] == []
+    assert any(warning["code"] == "ocr.failed" for warning in result.document["warnings"])
+    assert any(
+        warning["code"] == "page.no_extractable_content"
+        for warning in result.document["warnings"]
+    )
+    validate_contract(result.document, tmp_path)
 
 
 def test_tesseract_tsv_parser_and_quality_signals() -> None:
