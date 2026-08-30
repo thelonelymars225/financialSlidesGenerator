@@ -37,6 +37,9 @@ from financial_slides_worker.extraction.ocr import (
 )
 
 BoundingBox = tuple[float, float, float, float]
+DEFAULT_LINE_TOLERANCE = 3.0
+PARTIAL_TABLE_LINE_TOLERANCE = 7.0
+PARTIAL_TABLE_MAX_WIDTH_RATIO = 0.75
 
 
 def _identity(content: bytes) -> tuple[str, str, str]:
@@ -119,10 +122,74 @@ def _inside_any_table(word: dict[str, Any], table_boxes: list[BoundingBox]) -> b
     )
 
 
-def _group_words_into_lines(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _word_center(word: dict[str, Any]) -> tuple[float, float]:
+    return (
+        (float(word["x0"]) + float(word["x1"])) / 2,
+        (float(word["top"]) + float(word["bottom"])) / 2,
+    )
+
+
+def _inside_vertical_region(word: dict[str, Any], region: BoundingBox) -> bool:
+    center_y = _word_center(word)[1]
+    return region[1] <= center_y <= region[3]
+
+
+def _meaningful_text(word: dict[str, Any]) -> bool:
+    return sum(character.isalpha() for character in str(word.get("text", ""))) >= 2
+
+
+def _partial_table(
+    table_box: BoundingBox,
+    words: list[dict[str, Any]],
+    page_width: float,
+) -> bool:
+    left, _, right, _ = table_box
+    if (right - left) / max(1.0, page_width) >= PARTIAL_TABLE_MAX_WIDTH_RATIO:
+        return False
+
+    inside_words = [word for word in words if _inside_any_table(word, [table_box])]
+    outside_words = [
+        word
+        for word in words
+        if _inside_vertical_region(word, table_box)
+        and not _inside_any_table(word, [table_box])
+        and _meaningful_text(word)
+    ]
+    return any(
+        abs(_word_center(inside)[1] - _word_center(outside)[1])
+        <= PARTIAL_TABLE_LINE_TOLERANCE
+        for inside in inside_words
+        for outside in outside_words
+    )
+
+
+def _merge_vertical_regions(table_boxes: list[BoundingBox]) -> list[BoundingBox]:
+    merged: list[BoundingBox] = []
+    for box in sorted(table_boxes, key=lambda item: (item[1], item[3])):
+        if not merged or box[1] > merged[-1][3]:
+            merged.append(box)
+            continue
+        previous = merged[-1]
+        merged[-1] = (
+            min(previous[0], box[0]),
+            min(previous[1], box[1]),
+            max(previous[2], box[2]),
+            max(previous[3], box[3]),
+        )
+    return merged
+
+
+def _group_words_into_lines(
+    words: list[dict[str, Any]],
+    *,
+    y_tolerance: float = DEFAULT_LINE_TOLERANCE,
+) -> list[dict[str, Any]]:
     lines: list[list[dict[str, Any]]] = []
     for word in sorted(words, key=lambda item: (float(item["top"]), float(item["x0"]))):
-        if not lines or abs(float(lines[-1][0]["top"]) - float(word["top"])) > 3:
+        if (
+            not lines
+            or abs(float(lines[-1][0]["top"]) - float(word["top"])) > y_tolerance
+        ):
             lines.append([word])
         else:
             lines[-1].append(word)
@@ -189,16 +256,42 @@ def _table_block(
 
 def _page_blocks(page: Any, source_id: str, page_number: int) -> list[dict[str, Any]]:
     tables = page.find_tables()
-    table_boxes = [tuple(float(value) for value in table.bbox) for table in tables]
     words = page.extract_words(
         x_tolerance=2,
-        y_tolerance=3,
+        y_tolerance=DEFAULT_LINE_TOLERANCE,
         keep_blank_chars=False,
         use_text_flow=True,
     )
-    lines = _group_words_into_lines(
-        [word for word in words if not _inside_any_table(word, table_boxes)]
-    )
+    table_boxes = [tuple(float(value) for value in table.bbox) for table in tables]
+    partial_flags = [
+        _partial_table(table_box, words, float(page.width)) for table_box in table_boxes
+    ]
+    complete_tables = [table for table, partial in zip(tables, partial_flags) if not partial]
+    complete_table_boxes = [
+        table_box for table_box, partial in zip(table_boxes, partial_flags) if not partial
+    ]
+    partial_table_boxes = [
+        table_box for table_box, partial in zip(table_boxes, partial_flags) if partial
+    ]
+
+    available_words = [
+        word for word in words if not _inside_any_table(word, complete_table_boxes)
+    ]
+    partial_regions = _merge_vertical_regions(partial_table_boxes)
+    partial_words = [
+        word
+        for word in available_words
+        if any(_inside_vertical_region(word, region) for region in partial_regions)
+    ]
+    regular_words = [word for word in available_words if word not in partial_words]
+    lines = _group_words_into_lines(regular_words)
+    for region in partial_regions:
+        lines.extend(
+            _group_words_into_lines(
+                [word for word in partial_words if _inside_vertical_region(word, region)],
+                y_tolerance=PARTIAL_TABLE_LINE_TOLERANCE,
+            )
+        )
 
     ordered_items: list[tuple[float, float, dict[str, Any]]] = []
     for index, line in enumerate(lines, start=1):
@@ -215,7 +308,7 @@ def _page_blocks(page: Any, source_id: str, page_number: int) -> list[dict[str, 
         }
         ordered_items.append((bbox[1], bbox[0], block))
 
-    for index, table in enumerate(tables, start=1):
+    for index, table in enumerate(complete_tables, start=1):
         block = _table_block(table, source_id, page_number, index)
         ordered_items.append((float(table.bbox[1]), float(table.bbox[0]), block))
 
