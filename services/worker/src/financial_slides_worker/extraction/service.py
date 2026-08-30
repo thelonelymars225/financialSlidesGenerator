@@ -6,6 +6,7 @@ from time import perf_counter
 from financial_slides_worker.extraction.errors import (
     EmptyInputError,
     ExtractionLimitError,
+    OcrFailedError,
     UnsupportedFileError,
 )
 from financial_slides_worker.extraction.finance_numbers import enrich_financial_numbers
@@ -68,7 +69,11 @@ class ExtractionService:
             deadline=started + self._limits.timeout_seconds,
             clock=self._clock,
         )
-        document = enrich_financial_numbers(extractor.extract(source, context))
+        document = extractor.extract(source, context)
+        context.ensure_time_remaining()
+        if not any(page.get("blocks") for page in document.get("pages", ())):
+            raise OcrFailedError()
+        document = enrich_financial_numbers(document)
         context.ensure_time_remaining()
         return ExtractionResult(
             document=document,
