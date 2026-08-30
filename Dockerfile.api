@@ -18,7 +18,10 @@ WORKDIR /app
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY --from=node-dependencies /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-dependencies /app /app
-RUN uv sync --frozen --no-dev --package financial-slides-api \
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes tesseract-ocr tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/* \
+    && uv sync --frozen --no-dev --package financial-slides-api \
     && groupadd --system app \
     && useradd --system --gid app --home-dir /app app \
     && chown -R app:app /app
