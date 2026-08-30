@@ -21,6 +21,7 @@ from financial_slides_api.schemas.jobs import JobResponse, JobResultResponse
 from financial_slides_api.services.jobs import ExtractionJobService
 from financial_slides_api.worker import ExtractionJobWorker
 from financial_slides_worker import (
+    ExtractionService,
     ExtractionResult,
     ExtractionTelemetry,
     ExtractionTimeoutError,
@@ -71,6 +72,34 @@ class TimedOutExtraction(SuccessfulExtraction):
         raise ExtractionTimeoutError()
 
 
+class EmptyDocumentExtractor:
+    media_type = "application/pdf"
+    route = "native_pdf"
+
+    def extract(self, source, context):
+        return {
+            "schemaVersion": "0.1",
+            "documentId": "document-empty",
+            "source": {"inputType": "file"},
+            "pages": [
+                {
+                    "pageNumber": 1,
+                    "width": 612,
+                    "height": 792,
+                    "coordinateUnit": "pt",
+                    "blocks": [],
+                }
+            ],
+            "warnings": [
+                {
+                    "code": "ocr.failed",
+                    "severity": "error",
+                    "message": "Local OCR failed for page 1.",
+                }
+            ],
+        }
+
+
 def command(
     text: str,
     *,
@@ -87,6 +116,20 @@ def command(
         deck_purpose="management-review",
         slide_count=8,
         request_key=request_key,
+    )
+
+
+def empty_pdf_command() -> CreateJobCommand:
+    return CreateJobCommand(
+        owner_id="owner-1",
+        input_mode="file",
+        source_text=None,
+        file_name="image-only.pdf",
+        file_data=b"%PDF-1.7\nfixture",
+        declared_media_type="application/pdf",
+        deck_purpose="management-review",
+        slide_count=8,
+        request_key="empty-ocr-result",
     )
 
 
@@ -179,6 +222,20 @@ def test_retry_backoff_and_attempt_limit_are_bounded(tmp_path) -> None:
     assert terminal.status is JobStatus.FAILED
     assert terminal.attempt_count == 2
     assert terminal.failure.code == "extraction_timeout"
+
+
+def test_ocr_failure_cannot_mark_a_zero_block_job_succeeded(tmp_path) -> None:
+    clock = MutableClock()
+    service, store = service_and_store(tmp_path, clock)
+    job = service.create(empty_pdf_command())
+    extraction = ExtractionService(extractors=(EmptyDocumentExtractor(),))
+
+    assert ExtractionJobWorker(store, extraction, clock=clock).run_available() == 1
+
+    failed = service.get(job.id, "owner-1")
+    assert failed.status is JobStatus.FAILED
+    assert failed.failure.code == "ocr_failed"
+    assert store.get_result(job.id) is None
 
 
 def test_interrupted_worker_lease_is_recovered_after_restart(tmp_path) -> None:

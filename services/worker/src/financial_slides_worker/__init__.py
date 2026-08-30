@@ -8,6 +8,7 @@ from financial_slides_worker.extraction import (
     ExtractionTelemetry,
     ExtractionTimeoutError,
     FileSource,
+    OcrFailedError,
     TextSource,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "ExtractionTelemetry",
     "ExtractionTimeoutError",
     "FileSource",
+    "OcrFailedError",
     "TextSource",
 ]

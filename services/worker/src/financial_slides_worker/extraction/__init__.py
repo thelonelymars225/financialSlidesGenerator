@@ -8,6 +8,7 @@ from financial_slides_worker.extraction.errors import (
     ExtractionLimitError,
     ExtractionTimeoutError,
     MediaTypeMismatchError,
+    OcrFailedError,
     UnsupportedFileError,
 )
 from financial_slides_worker.extraction.fallback import (
@@ -44,6 +45,7 @@ __all__ = [
     "FallbackReason",
     "FileSource",
     "MediaTypeMismatchError",
+    "OcrFailedError",
     "PageFallbackCandidate",
     "PageFallbackProvider",
     "PageFallbackRequest",
