@@ -38,6 +38,14 @@ class EncryptedFileError(ExtractionError):
         super().__init__("encrypted_file", message)
 
 
+class OcrFailedError(ExtractionError):
+    def __init__(
+        self,
+        message: str = "The document contains no extractable content after local OCR.",
+    ) -> None:
+        super().__init__("ocr_failed", message)
+
+
 class ExtractionLimitError(ExtractionError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(code, message)
