@@ -48,7 +48,10 @@ preflight, deterministic fitting, and targeted-repair requests.
 
 Defines the stable renderer interface and will contain the selected Node-based
 PowerPoint adapter. Keeping it isolated allows renderer replacement after
-editability and compatibility benchmarks.
+editability and compatibility benchmarks. The public boundary can return a
+self-contained in-memory artifact with format and media-type metadata, while a
+compatibility wrapper writes the same artifact to disk for CLI and Python
+process integrations.
 
 ### `fixtures/golden`
 
@@ -89,6 +92,9 @@ web -> API -> job queue -> worker
 - OCR is English-only until Arabic enters the approved MVP. It is capped
   separately from the document page limit and flags failed or low-confidence
   pages instead of silently accepting them.
+- The local OCR facade accepts encoded raster images independently of
+  pdfplumber. Raster byte size, decoded pixel count, and execution time are
+  bounded before Tesseract is invoked.
 - Provider fallback is page-level and opt-in. It requires an explicit routing
   reason, disabled provider retention, contract-valid page evidence, bounded
   attempts/time/tokens/cost, and preservation of reliable financial values.

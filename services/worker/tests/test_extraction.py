@@ -31,11 +31,14 @@ from financial_slides_worker.extraction import (
 from financial_slides_worker.extraction.native import PdfPlumberExtractor, _page_blocks, _page_route
 from financial_slides_worker.extraction.ocr import (
     OcrFailure,
+    OcrImageLimits,
     OcrPage,
     OcrTable,
     OcrTableCell,
     OcrWord,
+    RasterizedPage,
     TesseractOcrEngine,
+    LocalOcrService,
     page_quality,
     parse_tesseract_tsv,
 )
@@ -76,7 +79,10 @@ if (!result.valid) {
 def scanned_pdf(text: str, *, size: tuple[int, int] = (600, 800), rotation: int = 0) -> bytes:
     image = Image.new("RGB", size, "white")
     font_size = max(12, min(size) // 12)
-    font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+    except OSError:
+        font = ImageFont.load_default(size=font_size)
     ImageDraw.Draw(image).text(
         (max(5, font_size), max(5, font_size * 2)), text, fill="black", font=font
     )
@@ -561,6 +567,93 @@ def test_tesseract_tsv_parser_and_quality_signals() -> None:
     assert quality.text_coverage > 0
     assert quality.suspicious_character_ratio == 0
     assert quality.numeric_consistency == 1
+
+
+def test_tesseract_adapter_accepts_rasterized_images_without_pdf_objects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tsv = (
+        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth"
+        "\theight\tconf\ttext\n"
+        "5\t1\t1\t1\t1\t1\t10\t20\t50\t15\t96.0\tRevenue\n"
+    )
+    calls: list[tuple[list[str], bytes, float]] = []
+
+    class Context:
+        def ensure_time_remaining(self) -> None:
+            pass
+
+        def seconds_remaining(self) -> float:
+            return 4.5
+
+    class Completed:
+        stdout = tsv.encode()
+
+    def fake_run(command, *, input, capture_output, check, timeout):
+        assert capture_output is True
+        assert check is True
+        calls.append((command, input, timeout))
+        return Completed()
+
+    monkeypatch.setattr("financial_slides_worker.extraction.ocr.subprocess.run", fake_run)
+    engine = TesseractOcrEngine(
+        executable="fixture-tesseract",
+        language="eng",
+        page_segmentation_mode=6,
+    )
+
+    page = engine.extract_image(RasterizedPage(b"png-fixture", 200, 100), Context())
+
+    assert [word.text for word in page.words] == ["Revenue"]
+    assert page.language == "eng"
+    assert calls == [
+        (
+            [
+                "fixture-tesseract",
+                "stdin",
+                "stdout",
+                "-l",
+                "eng",
+                "--psm",
+                "6",
+                "tsv",
+            ],
+            b"png-fixture",
+            4.5,
+        )
+    ]
+
+
+def test_local_ocr_service_is_bounded_and_embed_friendly() -> None:
+    class Engine:
+        provider = "fixture-local"
+
+        def __init__(self) -> None:
+            self.images: list[RasterizedPage] = []
+
+        def extract_image(self, image: RasterizedPage, context: object) -> OcrPage:
+            context.ensure_time_remaining()
+            self.images.append(image)
+            return ocr_page(width=image.width_px, height=image.height_px)
+
+    engine = Engine()
+    service = LocalOcrService(
+        engine,
+        limits=OcrImageLimits(max_image_bytes=10, max_pixels=100, timeout_seconds=2),
+        clock=lambda: 0.0,
+    )
+
+    page = service.extract_image(b"png", 10, 10)
+
+    assert service.provider == "fixture-local"
+    assert page.width_px == 10
+    assert engine.images == [RasterizedPage(b"png", 10, 10)]
+    with pytest.raises(ValueError, match="byte limit"):
+        service.extract_image(b"x" * 11, 1, 1)
+    with pytest.raises(ValueError, match="pixel limit"):
+        service.extract_image(b"png", 11, 10)
+    with pytest.raises(ValueError, match="timeout"):
+        OcrImageLimits(timeout_seconds=0)
 
 
 @pytest.mark.skipif(shutil.which("tesseract") is None, reason="local Tesseract is unavailable")

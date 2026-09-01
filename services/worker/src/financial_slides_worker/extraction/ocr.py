@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import csv
 from dataclasses import dataclass
 from io import BytesIO, StringIO
 import re
 import subprocess
+from time import perf_counter
 from typing import Any, Protocol
 
-from financial_slides_worker.extraction.models import ExtractionContext
+from financial_slides_worker.extraction.models import ExtractionContext, ExtractionLimits
 
 BoundingBox = tuple[float, float, float, float]
 _NUMBER = re.compile(r"^[($€£]?[+-]?\d[\d,.]*[kKmMbB]?%?[)]?$")
@@ -52,6 +54,60 @@ class OcrPage:
 
 
 @dataclass(frozen=True)
+class RasterizedPage:
+    """Encoded image input accepted by local OCR engines."""
+
+    data: bytes
+    width_px: int
+    height_px: int
+
+
+@dataclass(frozen=True)
+class OcrImageLimits:
+    max_image_bytes: int = 25 * 1024 * 1024
+    max_pixels: int = 50_000_000
+    timeout_seconds: float = 30.0
+
+    def __post_init__(self) -> None:
+        if self.max_image_bytes < 1:
+            raise ValueError("OCR image byte limit must be positive.")
+        if self.max_pixels < 1:
+            raise ValueError("OCR image pixel limit must be positive.")
+        if self.timeout_seconds <= 0:
+            raise ValueError("OCR timeout must be positive.")
+
+
+def _validate_rasterized_page(image: RasterizedPage, limits: OcrImageLimits) -> None:
+    if not image.data:
+        raise ValueError("OCR image data must not be empty.")
+    if image.width_px <= 0 or image.height_px <= 0:
+        raise ValueError("OCR image dimensions must be positive.")
+    if len(image.data) > limits.max_image_bytes:
+        raise ValueError(f"OCR image exceeds the {limits.max_image_bytes}-byte limit.")
+    if image.width_px * image.height_px > limits.max_pixels:
+        raise ValueError(f"OCR image exceeds the {limits.max_pixels}-pixel limit.")
+
+
+class PageRasterizer(Protocol):
+    def rasterize(self, page: Any) -> RasterizedPage: ...
+
+
+class PdfPageRasterizer:
+    """Replaceable pdfplumber page-to-PNG adapter."""
+
+    def __init__(self, resolution: int = 144) -> None:
+        if resolution < 72 or resolution > 600:
+            raise ValueError("OCR raster resolution must be between 72 and 600 DPI.")
+        self._resolution = resolution
+
+    def rasterize(self, page: Any) -> RasterizedPage:
+        image = page.to_image(resolution=self._resolution, antialias=True).original
+        payload = BytesIO()
+        image.save(payload, format="PNG")
+        return RasterizedPage(payload.getvalue(), image.width, image.height)
+
+
+@dataclass(frozen=True)
 class PageQuality:
     text_coverage: float
     ocr_confidence: float
@@ -67,11 +123,26 @@ class OcrEngine(Protocol):
     def extract(self, page: Any, context: ExtractionContext) -> OcrPage: ...
 
 
+class ImageOcrEngine(Protocol):
+    provider: str
+
+    def extract_image(
+        self,
+        image: RasterizedPage,
+        context: ExtractionContext,
+    ) -> OcrPage: ...
+
+
 class OcrFailure(RuntimeError):
     """A local OCR page could not be processed safely."""
 
 
-def parse_tesseract_tsv(tsv: str, width_px: int, height_px: int) -> OcrPage:
+def parse_tesseract_tsv(
+    tsv: str,
+    width_px: int,
+    height_px: int,
+    language: str = "en",
+) -> OcrPage:
     words = []
     for row in csv.DictReader(StringIO(tsv), delimiter="\t"):
         text = (row.get("text") or "").strip()
@@ -101,23 +172,52 @@ def parse_tesseract_tsv(tsv: str, width_px: int, height_px: int) -> OcrPage:
                 line=line,
             )
         )
-    return OcrPage(tuple(words), width_px, height_px, "en")
+    return OcrPage(tuple(words), width_px, height_px, language)
 
 
 class TesseractOcrEngine:
-    """Thin adapter around local Tesseract TSV output."""
+    """Bounded adapter around local Tesseract TSV output.
+
+    The rasterizer is injected so the engine can be embedded in another PDF or
+    image pipeline without importing pdfplumber-specific types.
+    """
 
     provider = "tesseract"
 
-    def __init__(self, executable: str = "tesseract", language: str = "eng") -> None:
+    def __init__(
+        self,
+        executable: str = "tesseract",
+        language: str = "eng",
+        *,
+        page_segmentation_mode: int = 1,
+        rasterizer: PageRasterizer | None = None,
+        image_limits: OcrImageLimits | None = None,
+    ) -> None:
+        if not executable.strip():
+            raise ValueError("Tesseract executable must not be empty.")
+        if not language.strip():
+            raise ValueError("OCR language must not be empty.")
+        if page_segmentation_mode < 0 or page_segmentation_mode > 13:
+            raise ValueError("Tesseract page segmentation mode must be between 0 and 13.")
         self._executable = executable
         self._language = language
+        self._page_segmentation_mode = page_segmentation_mode
+        self._rasterizer = rasterizer or PdfPageRasterizer()
+        self._image_limits = image_limits or OcrImageLimits()
 
     def extract(self, page: Any, context: ExtractionContext) -> OcrPage:
         context.ensure_time_remaining()
-        image = page.to_image(resolution=144, antialias=True).original
-        payload = BytesIO()
-        image.save(payload, format="PNG")
+        return self.extract_image(self._rasterizer.rasterize(page), context)
+
+    def extract_image(
+        self,
+        image: RasterizedPage,
+        context: ExtractionContext,
+    ) -> OcrPage:
+        """OCR an encoded image without requiring a PDF page object."""
+
+        _validate_rasterized_page(image, self._image_limits)
+        context.ensure_time_remaining()
         try:
             result = subprocess.run(
                 [
@@ -127,10 +227,10 @@ class TesseractOcrEngine:
                     "-l",
                     self._language,
                     "--psm",
-                    "1",
+                    str(self._page_segmentation_mode),
                     "tsv",
                 ],
-                input=payload.getvalue(),
+                input=image.data,
                 capture_output=True,
                 check=True,
                 timeout=context.seconds_remaining(),
@@ -140,9 +240,40 @@ class TesseractOcrEngine:
         context.ensure_time_remaining()
         return parse_tesseract_tsv(
             result.stdout.decode("utf-8", errors="replace"),
-            image.width,
-            image.height,
+            image.width_px,
+            image.height_px,
+            self._language,
         )
+
+
+class LocalOcrService:
+    """Small public facade for embedding bounded local OCR in another system."""
+
+    def __init__(
+        self,
+        engine: ImageOcrEngine | None = None,
+        *,
+        limits: OcrImageLimits | None = None,
+        clock: Callable[[], float] = perf_counter,
+    ) -> None:
+        self._limits = limits or OcrImageLimits()
+        self._engine = engine or TesseractOcrEngine(image_limits=self._limits)
+        self._clock = clock
+
+    @property
+    def provider(self) -> str:
+        return self._engine.provider
+
+    def extract_image(self, data: bytes, width_px: int, height_px: int) -> OcrPage:
+        image = RasterizedPage(data, width_px, height_px)
+        _validate_rasterized_page(image, self._limits)
+        started = self._clock()
+        context = ExtractionContext(
+            limits=ExtractionLimits(timeout_seconds=self._limits.timeout_seconds),
+            deadline=started + self._limits.timeout_seconds,
+            clock=self._clock,
+        )
+        return self._engine.extract_image(image, context)
 
 
 def page_quality(page: OcrPage) -> PageQuality:

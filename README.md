@@ -26,6 +26,8 @@ docs/                          BRD, architecture, and decision records
 
 See [docs/architecture.md](docs/architecture.md) for why these boundaries exist.
 Cloud hosting instructions live in [docs/deployment.md](docs/deployment.md).
+Reusable OCR and PowerPoint export interfaces are documented in
+[docs/modular-ocr-and-export.md](docs/modular-ocr-and-export.md).
 
 ## Prerequisites
 
@@ -88,6 +90,19 @@ provider account settings; hosted analysis refuses to start otherwise. Optional
 per-million-token prices in `.env` enable cost telemetry without changing the
 provider adapter. Privacy defaults and deletion behavior are documented in
 [`docs/privacy.md`](docs/privacy.md).
+
+## Reusable local OCR and export
+
+The default PDF path uses native extraction first and invokes local Tesseract
+only for scanned or low-text pages. This keeps external OCR cost at zero. For a
+larger system that already rasterizes pages, `LocalOcrService.extract_image`
+accepts encoded image bytes and pixel dimensions directly, with byte, pixel,
+and time limits.
+
+The presentation package provides both an in-memory exporter and the existing
+file renderer. Use `exportPresentation(deckSpec)` when integrating with object
+storage, an API response, or a queue; use `PresentationRenderer.render` for a
+filesystem artifact. Both consume the same renderer-neutral DeckSpec contract.
 
 Queued extraction runs outside the web request. Process a bounded batch from
 the durable secretless queue with:
