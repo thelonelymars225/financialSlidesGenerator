@@ -9,6 +9,8 @@ from financial_slides_api.domain.analysis import (
     AnalysisError,
     AnalysisFailureCode,
     ProviderAnalysis,
+    ProviderError,
+    ProviderFailureCode,
     ProviderTelemetry,
 )
 from financial_slides_api.infrastructure.deterministic_analysis import (
@@ -61,6 +63,16 @@ class FailingProvider:
     async def analyze(self, request, validation_feedback) -> ProviderAnalysis:
         del request, validation_feedback
         raise RuntimeError("sensitive provider detail")
+
+
+class TypedFailingProvider:
+    def __init__(self, code: ProviderFailureCode, *, retryable: bool) -> None:
+        self.code = code
+        self.retryable = retryable
+
+    async def analyze(self, request, validation_feedback) -> ProviderAnalysis:
+        del request, validation_feedback
+        raise ProviderError(self.code, retryable=self.retryable)
 
 
 def run_analysis(service: FinancialAnalysisService, document: dict | None = None, **kwargs):
@@ -145,6 +157,33 @@ def test_plain_table_numbers_are_available_for_grounded_analysis() -> None:
     assert any(number.displayed_value == "12.5%" and number.value == 0.125 for number in numbers)
 
 
+def test_analysis_request_keeps_numeric_evidence_and_adjacent_context_only() -> None:
+    document = source_document()
+    document["pages"][0]["blocks"] = [
+        {"id": "heading", "type": "text", "order": 1, "text": "Overview"},
+        {"id": "before", "type": "text", "order": 2, "text": "Revenue context"},
+        {"id": "metric", "type": "text", "order": 3, "text": "Revenue was $12.4m"},
+        {"id": "after", "type": "text", "order": 4, "text": "Driven by renewals"},
+        {"id": "unrelated", "type": "text", "order": 5, "text": "General commentary"},
+    ]
+
+    request = build_analysis_request(document)
+
+    assert [block.block_id for block in request.blocks] == ["before", "metric", "after"]
+
+
+def test_analysis_request_rejects_evidence_over_the_input_budget() -> None:
+    document = source_document()
+    document["pages"][0]["blocks"][0]["text"] = "$12.4m " + ("x" * 50)
+    document["pages"][0]["blocks"][0].pop("numericValues", None)
+
+    with pytest.raises(AnalysisError) as failure:
+        build_analysis_request(document, max_input_characters=20)
+
+    assert failure.value.code is AnalysisFailureCode.INPUT_TOO_LARGE
+    assert failure.value.retryable is False
+
+
 def test_invalid_output_receives_one_targeted_repair() -> None:
     provider = ScriptedProvider({"schemaVersion": "0.2"}, valid_analysis())
 
@@ -165,7 +204,7 @@ def test_repair_exhaustion_is_a_typed_failure() -> None:
         run_analysis(FinancialAnalysisService(provider))
 
     assert failure.value.code is AnalysisFailureCode.INVALID_OUTPUT
-    assert failure.value.retryable is False
+    assert failure.value.retryable is True
     assert provider.calls == 2
 
 
@@ -203,6 +242,35 @@ def test_provider_failure_is_typed_without_exposing_provider_detail() -> None:
     assert failure.value.code is AnalysisFailureCode.PROVIDER_FAILURE
     assert failure.value.message == "analysis provider failed"
     assert failure.value.retryable is True
+
+
+@pytest.mark.parametrize(
+    ("provider_code", "analysis_code", "retryable"),
+    [
+        (ProviderFailureCode.AUTHENTICATION, AnalysisFailureCode.AUTHENTICATION_FAILED, False),
+        (ProviderFailureCode.PAYMENT_REQUIRED, AnalysisFailureCode.PAYMENT_REQUIRED, False),
+        (ProviderFailureCode.RATE_LIMITED, AnalysisFailureCode.RATE_LIMITED, True),
+        (ProviderFailureCode.INVALID_REQUEST, AnalysisFailureCode.INVALID_REQUEST, False),
+        (ProviderFailureCode.TIMEOUT, AnalysisFailureCode.TIMEOUT, True),
+        (ProviderFailureCode.NETWORK, AnalysisFailureCode.NETWORK_FAILURE, True),
+        (ProviderFailureCode.INVALID_RESPONSE, AnalysisFailureCode.INVALID_RESPONSE, True),
+    ],
+)
+def test_provider_failures_map_to_safe_analysis_failures(
+    provider_code: ProviderFailureCode,
+    analysis_code: AnalysisFailureCode,
+    retryable: bool,
+) -> None:
+    with pytest.raises(AnalysisError) as failure:
+        run_analysis(
+            FinancialAnalysisService(
+                TypedFailingProvider(provider_code, retryable=retryable)
+            )
+        )
+
+    assert failure.value.code is analysis_code
+    assert failure.value.retryable is retryable
+    assert "sensitive" not in failure.value.message
 
 
 def test_cancellation_stops_before_provider_content_is_sent() -> None:

@@ -1,15 +1,38 @@
+from uuid import uuid4
+
 import pytest
 from fastapi.testclient import TestClient
 
-from financial_slides_api.main import app, cors_origins_from_environment
+from financial_slides_api.main import app, cors_origins_from_environment, create_app
 
 client = TestClient(app)
 
 
 def test_health_response() -> None:
-    response = client.get("/health")
+    response = TestClient(create_app({})).get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "api"}
+    assert response.json() == {
+        "status": "ok",
+        "service": "api",
+        "analysis_provider": "deterministic",
+        "analysis_model": "fixture-v1",
+        "analysis_ready": True,
+    }
+
+
+def test_production_health_fails_when_hosted_provider_is_missing() -> None:
+    production_client = TestClient(create_app({"APP_ENV": "production"}))
+
+    response = production_client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "service": "api",
+        "analysis_provider": "deterministic",
+        "analysis_model": "fixture-v1",
+        "analysis_ready": False,
+    }
 
 
 def test_reads_unique_cors_origins_from_environment() -> None:
@@ -36,6 +59,7 @@ def test_create_text_job() -> None:
             "source_text": "Revenue increased by 14%.",
             "deck_purpose": "management-review",
             "slide_count": 10,
+            "request_key": f"health-test-create-text-job-{uuid4()}",
         },
     )
     assert response.status_code == 202

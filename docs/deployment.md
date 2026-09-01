@@ -34,8 +34,15 @@ Set the hosted-model variables on the API service:
 ```dotenv
 MODEL_PROVIDER=deepseek
 MODEL_API_KEY=<server-only provider key>
+MODEL_NAME=deepseek-v4-flash
 MODEL_DATA_RETENTION_DISABLED=true
+MODEL_TIMEOUT_SECONDS=90
+MODEL_MAX_OUTPUT_TOKENS=8192
 ```
+
+Production fails readiness and does not generate a deterministic fixture deck when
+the hosted provider is missing or unavailable. `GET /health` reports the configured
+provider, model, and `analysis_ready` state without exposing credentials.
 
 The separate Railway worker service and Supabase variables are intentionally
 unused in this demo profile.

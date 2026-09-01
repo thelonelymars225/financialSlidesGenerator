@@ -652,12 +652,17 @@ class SlideGenerationService:
 def _analysis_provider_for_generation(
     environment: Mapping[str, str] = os.environ,
 ) -> AnalysisProvider:
+    production = environment.get("APP_ENV", "development").strip().lower() == "production"
+    configured_provider = environment.get("MODEL_PROVIDER", "deterministic").strip().lower()
+    if production and configured_provider in {"", "deterministic"}:
+        raise RuntimeError("production requires a hosted MODEL_PROVIDER")
     try:
         return analysis_provider_from_environment(environment)
     except RuntimeError as error:
-        provider = environment.get("MODEL_PROVIDER", "deterministic").strip().lower()
-        if provider in {"deepseek", "openai-compatible"} and str(error).startswith(
-            "MODEL_DATA_RETENTION_DISABLED"
+        if (
+            not production
+            and configured_provider in {"deepseek", "openai-compatible"}
+            and str(error).startswith("MODEL_DATA_RETENTION_DISABLED")
         ):
             return DeterministicAnalysisProvider()
         raise
@@ -666,13 +671,14 @@ def _analysis_provider_for_generation(
 @lru_cache(maxsize=1)
 def get_generation_service() -> SlideGenerationService:
     provider = _analysis_provider_for_generation()
+    production = os.environ.get("APP_ENV", "development").strip().lower() == "production"
     return SlideGenerationService(
         get_job_service(),
         FinancialAnalysisService(
             provider,
             fallback_provider=(
                 None
-                if getattr(provider, "name", None) == "deterministic"
+                if production or getattr(provider, "name", None) == "deterministic"
                 else DeterministicAnalysisProvider()
             ),
             timeout_seconds=analysis_timeout_seconds_from_environment(),

@@ -48,7 +48,10 @@ def create_app(environment: Mapping[str, str] = os.environ) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    application.get("/health", tags=["operations"])(health)
+    def health_check():
+        return health(environment)
+
+    application.get("/health", tags=["operations"])(health_check)
     application.include_router(jobs_router, prefix="/api")
     application.include_router(generation_router, prefix="/api")
     application.include_router(privacy_router, prefix="/api")
