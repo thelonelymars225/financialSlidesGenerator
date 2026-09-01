@@ -28,6 +28,17 @@ from financial_slides_worker.extraction.models import (
     FileSource,
     TextSource,
 )
+from financial_slides_worker.extraction.ocr import (
+    ImageOcrEngine,
+    LocalOcrService,
+    OcrEngine,
+    OcrImageLimits,
+    OcrPage,
+    PageRasterizer,
+    PdfPageRasterizer,
+    RasterizedPage,
+    TesseractOcrEngine,
+)
 from financial_slides_worker.extraction.service import ExtractionService
 
 __all__ = [
@@ -45,13 +56,22 @@ __all__ = [
     "FallbackReason",
     "FileSource",
     "MediaTypeMismatchError",
+    "ImageOcrEngine",
+    "LocalOcrService",
+    "OcrEngine",
     "OcrFailedError",
+    "OcrImageLimits",
+    "OcrPage",
+    "PageRasterizer",
     "PageFallbackCandidate",
     "PageFallbackProvider",
     "PageFallbackRequest",
     "ProviderPageResult",
+    "PdfPageRasterizer",
+    "RasterizedPage",
     "SelectivePageFallback",
     "TextSource",
+    "TesseractOcrEngine",
     "UnsupportedFileError",
     "VisionModelPageProvider",
 ]

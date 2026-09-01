@@ -6,7 +6,11 @@ import { test } from "node:test";
 
 import JSZip from "jszip";
 
-import { PresentationRenderer } from "../src/index.js";
+import {
+  createPresentationExporter,
+  exportPresentation,
+  PresentationRenderer,
+} from "../src/index.js";
 import { visualFixture } from "../../presentation-harness/test/visual-fixture.mjs";
 
 const examplePath = resolve(
@@ -19,6 +23,21 @@ const marker =
 async function exampleDeck() {
   return JSON.parse(await readFile(examplePath, "utf8"));
 }
+
+test("exports a self-contained PowerPoint artifact in memory", async () => {
+  const artifact = await exportPresentation(await exampleDeck());
+
+  assert.equal(artifact.format, "pptx");
+  assert.equal(artifact.fileExtension, ".pptx");
+  assert.equal(
+    artifact.mediaType,
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  );
+  assert.ok(Buffer.isBuffer(artifact.data));
+  assert.equal(artifact.data.subarray(0, 2).toString(), "PK");
+  assert.deepEqual(artifact.warnings, []);
+  assert.throws(() => createPresentationExporter("pdf"), /Unsupported presentation export format/);
+});
 
 test("renders editable text, table, chart, notes, and image OOXML", async () => {
   const deck = await exampleDeck();

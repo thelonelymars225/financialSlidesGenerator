@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+
 import PptxGenJS from "pptxgenjs";
 
 import {
@@ -214,9 +216,12 @@ function addComponent(pptx, slide, component, box, assets, warnings, theme) {
   throw new Error(`Unsupported component type: ${component.type}`);
 }
 
-export class PresentationRenderer {
-  async render(deckSpec, { outputPath, assets = {} } = {}) {
-    if (!outputPath) throw new Error("outputPath is required");
+export class PptxPresentationExporter {
+  format = "pptx";
+  mediaType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  fileExtension = ".pptx";
+
+  async export(deckSpec, { assets = {} } = {}) {
     if (!Array.isArray(deckSpec?.slides) || deckSpec.slides.length === 0) {
       throw new Error("deckSpec must contain at least one slide");
     }
@@ -291,7 +296,32 @@ export class PresentationRenderer {
       if (notes) slide.addNotes(notes);
     }
 
-    await pptx.writeFile({ fileName: outputPath, compression: true });
-    return { outputPath, warnings: [...new Set(warnings)] };
+    const data = await pptx.write({ outputType: "nodebuffer", compression: true });
+    return {
+      data: Buffer.from(data),
+      format: this.format,
+      mediaType: this.mediaType,
+      fileExtension: this.fileExtension,
+      warnings: [...new Set(warnings)],
+    };
   }
+
+  async render(deckSpec, { outputPath, assets = {} } = {}) {
+    if (!outputPath) throw new Error("outputPath is required");
+    const artifact = await this.export(deckSpec, { assets });
+    await writeFile(outputPath, artifact.data);
+    return { outputPath, warnings: artifact.warnings };
+  }
+}
+
+export class PresentationRenderer extends PptxPresentationExporter {}
+
+export function createPresentationExporter(format = "pptx") {
+  const normalized = String(format).trim().toLowerCase();
+  if (normalized === "pptx") return new PptxPresentationExporter();
+  throw new Error(`Unsupported presentation export format: ${format}`);
+}
+
+export async function exportPresentation(deckSpec, { format = "pptx", ...options } = {}) {
+  return createPresentationExporter(format).export(deckSpec, options);
 }
