@@ -9,7 +9,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from functools import lru_cache
 from threading import RLock
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
 from financial_slides_api.domain.analysis import AnalysisError
@@ -28,7 +28,7 @@ from financial_slides_api.domain.presentation import (
     resolve_density_profile,
     resolve_slide_count,
 )
-from financial_slides_api.infrastructure.audit import MetadataAuditLogger, NullAuditSink
+from financial_slides_api.infrastructure.audit import NullAuditSink, configured_audit_sink
 from financial_slides_api.infrastructure.deterministic_analysis import (
     DeterministicAnalysisProvider,
 )
@@ -52,6 +52,35 @@ DECK_TITLES = {
     "board-update": "Board Update",
     "investor-summary": "Investor Summary",
 }
+
+
+class HostedAiPolicy(Protocol):
+    def enabled_for(self, organization_id: str) -> bool: ...
+
+
+class DenyHostedAiPolicy:
+    def enabled_for(self, organization_id: str) -> bool:
+        del organization_id
+        return False
+
+
+class PostgresHostedAiPolicy:
+    def __init__(self, database_url: str) -> None:
+        self._database_url = database_url
+
+    def enabled_for(self, organization_id: str) -> bool:
+        import psycopg
+
+        with psycopg.connect(self._database_url) as connection:
+            row = connection.execute(
+                """
+                select hosted_ai_enabled
+                from financial_slides.organizations
+                where id=%s
+                """,
+                (organization_id,),
+            ).fetchone()
+        return bool(row and row[0])
 
 
 def _sources(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -433,6 +462,8 @@ class SlideGenerationService:
         max_attempts: int = 2,
         policy: RetentionPolicy = RetentionPolicy(),
         audit: AuditSink | None = None,
+        hosted_ai: bool = False,
+        hosted_ai_policy: HostedAiPolicy | None = None,
     ) -> None:
         self._extraction = extraction
         self._analysis = analysis
@@ -441,6 +472,8 @@ class SlideGenerationService:
         self._max_attempts = max_attempts
         self._policy = policy
         self._audit = audit or NullAuditSink()
+        self._hosted_ai = hosted_ai
+        self._hosted_ai_policy = hosted_ai_policy or DenyHostedAiPolicy()
         self._jobs: dict[str, GenerationJob] = {}
         self._request_jobs: dict[tuple[str, str, str, str], str] = {}
         self._lock = RLock()
@@ -454,6 +487,10 @@ class SlideGenerationService:
         density_profile: PresentationDensity | str = PresentationDensity.BALANCED,
     ) -> GenerationJob:
         self._purge_expired_outputs()
+        if self._hosted_ai and not self._hosted_ai_policy.enabled_for(owner_id):
+            raise GenerationConflictError(
+                "organization approval is required before sending report data to hosted AI"
+            )
         extraction_job, _ = self._extraction.result(extraction_job_id, owner_id)
         if deck_type != extraction_job.deck_purpose:
             raise GenerationConflictError("deck type must match the extraction request")
@@ -666,6 +703,8 @@ def _analysis_provider_for_generation(
 @lru_cache(maxsize=1)
 def get_generation_service() -> SlideGenerationService:
     provider = _analysis_provider_for_generation()
+    hosted_ai = getattr(provider, "name", None) != "deterministic"
+    database_url = os.getenv("DATABASE_URL", "")
     return SlideGenerationService(
         get_job_service(),
         FinancialAnalysisService(
@@ -679,5 +718,9 @@ def get_generation_service() -> SlideGenerationService:
         ),
         NodePresentationRenderer(),
         policy=get_retention_policy(),
-        audit=MetadataAuditLogger(),
+        audit=configured_audit_sink(),
+        hosted_ai=hosted_ai,
+        hosted_ai_policy=(
+            PostgresHostedAiPolicy(database_url) if database_url else DenyHostedAiPolicy()
+        ),
     )

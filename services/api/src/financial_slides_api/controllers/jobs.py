@@ -1,9 +1,11 @@
 """Thin HTTP transport for durable extraction jobs."""
 
+import os
+
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 
 from financial_slides_api.domain.jobs import (
     JobConflictError,
@@ -16,12 +18,14 @@ from financial_slides_api.schemas.jobs import (
     JobResponse,
     JobResultResponse,
 )
+from financial_slides_api.quotas import SubmissionIdentity
 from financial_slides_api.services.jobs import ExtractionJobService, get_job_service, get_job_store
+from financial_slides_api.security import Identity, RequestIdentity, require_manager
 from financial_slides_api.worker import ExtractionJobWorker
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
-OwnerId = Annotated[str, Header(alias="X-Owner-ID", min_length=1, max_length=128)]
+ManagerIdentity = Annotated[RequestIdentity, Depends(require_manager)]
 
 
 def service_dependency() -> ExtractionJobService:
@@ -44,13 +48,19 @@ def create_job(
     background: BackgroundTasks,
     service: JobService,
     worker: JobWorker,
-    owner_id: OwnerId = "local-development",
+    identity: SubmissionIdentity,
 ) -> JobResponse:
     try:
-        job = service.create(request.to_command(owner_id))
+        job = service.create(
+            request.to_command(
+                identity.organization_id,
+                created_by=identity.user_id,
+            )
+        )
     except JobConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-    background.add_task(worker.run_available, 1)
+    if os.getenv("WORKFLOW_BACKEND", "local").strip().lower() != "temporal":
+        background.add_task(worker.run_available, 1)
     return JobResponse.from_job(job)
 
 
@@ -58,10 +68,10 @@ def create_job(
 def get_job(
     job_id: UUID,
     service: JobService,
-    owner_id: OwnerId = "local-development",
+    identity: Identity,
 ) -> JobResponse:
     try:
-        return JobResponse.from_job(service.get(str(job_id), owner_id))
+        return JobResponse.from_job(service.get(str(job_id), identity.organization_id))
     except JobNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
@@ -70,10 +80,10 @@ def get_job(
 def get_job_result(
     job_id: UUID,
     service: JobService,
-    owner_id: OwnerId = "local-development",
+    identity: Identity,
 ) -> JobResultResponse:
     try:
-        job, document = service.result(str(job_id), owner_id)
+        job, document = service.result(str(job_id), identity.organization_id)
     except JobNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except JobNotReadyError as error:
@@ -85,10 +95,10 @@ def get_job_result(
 def cancel_job(
     job_id: UUID,
     service: JobService,
-    owner_id: OwnerId = "local-development",
+    identity: Identity,
 ) -> CancelJobResponse:
     try:
-        job = service.cancel(str(job_id), owner_id)
+        job = service.cancel(str(job_id), identity.organization_id)
     except JobNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     return CancelJobResponse(job=JobResponse.from_job(job))
@@ -98,10 +108,10 @@ def cancel_job(
 def delete_job_data(
     job_id: UUID,
     service: JobService,
-    owner_id: OwnerId = "local-development",
+    identity: ManagerIdentity,
 ) -> Response:
     try:
-        service.delete_data(str(job_id), owner_id)
+        service.delete_data(str(job_id), identity.organization_id)
     except JobNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)

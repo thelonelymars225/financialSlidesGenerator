@@ -51,10 +51,14 @@ class InMemoryJobStore:
 
     def save(self, job: Job) -> Job:
         with self._lock:
-            if job.id not in self._jobs:
+            current = self._jobs.get(job.id)
+            if current is None:
                 raise KeyError(job.id)
-            self._jobs[job.id] = job
-        return job
+            if current.state_version != job.state_version:
+                raise RuntimeError(f"job {job.id} changed concurrently")
+            saved = replace(job, state_version=job.state_version + 1)
+            self._jobs[job.id] = saved
+        return saved
 
     def claim_next(self, now: datetime) -> Job | None:
         with self._lock:
@@ -69,7 +73,24 @@ class InMemoryJobStore:
             if not queued:
                 return None
             claimed = mark_running(queued[0], now)
+            claimed = replace(claimed, state_version=claimed.state_version + 1)
             self._jobs[claimed.id] = claimed
+            return claimed
+
+    def claim(self, job_id: str, owner_id: str, now: datetime) -> Job | None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if (
+                job is None
+                or job.owner_id != owner_id
+                or job.status is not JobStatus.QUEUED
+                or job.available_at > now
+            ):
+                return None
+            claimed = replace(
+                mark_running(job, now), state_version=job.state_version + 1
+            )
+            self._jobs[job_id] = claimed
             return claimed
 
     def recover_stale(self, now: datetime, lease_seconds: float) -> int:
@@ -92,6 +113,7 @@ class InMemoryJobStore:
                         if retryable
                         else "Worker lease expired after the final attempt.",
                     ),
+                    state_version=job.state_version + 1,
                 )
                 recovered += 1
         return recovered

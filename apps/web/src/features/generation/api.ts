@@ -5,6 +5,7 @@ import {
   type PresentationDensity,
 } from "./density";
 import { apiUrl } from "../../api-url";
+import { apiAuthHeaders } from "../../auth";
 
 export class GenerationApiError extends Error {
   constructor(
@@ -27,10 +28,6 @@ async function parseResponse<T>(response: Response): Promise<T> {
   );
 }
 
-function ownerHeaders(ownerId: string): HeadersInit {
-  return { "X-Owner-ID": ownerId };
-}
-
 export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-development") {
   return {
     async start(
@@ -41,7 +38,7 @@ export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-d
     ): Promise<GenerationJob> {
       const response = await fetcher(apiUrl(`/api/jobs/${encodeURIComponent(extractionJobId)}/slides`), {
         method: "POST",
-        headers: { "content-type": "application/json", ...ownerHeaders(ownerId) },
+        headers: { "content-type": "application/json", ...await apiAuthHeaders(ownerId) },
         body: JSON.stringify({
           deck_type: deckType,
           density,
@@ -53,14 +50,14 @@ export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-d
 
     async getJob(jobId: string): Promise<GenerationJob> {
       const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}`), {
-        headers: ownerHeaders(ownerId),
+        headers: await apiAuthHeaders(ownerId),
       });
       return parseResponse<GenerationJob>(response);
     },
 
     async getResult(jobId: string): Promise<GenerationResult> {
       const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/result`), {
-        headers: ownerHeaders(ownerId),
+        headers: await apiAuthHeaders(ownerId),
       });
       return parseResponse<GenerationResult>(response);
     },
@@ -68,14 +65,14 @@ export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-d
     async retry(jobId: string): Promise<GenerationJob> {
       const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/retry`), {
         method: "POST",
-        headers: ownerHeaders(ownerId),
+        headers: await apiAuthHeaders(ownerId),
       });
       return parseResponse<GenerationJob>(response);
     },
 
     async download(jobId: string): Promise<Blob> {
       const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/artifact`), {
-        headers: ownerHeaders(ownerId),
+        headers: await apiAuthHeaders(ownerId),
       });
       if (!response.ok) await parseResponse(response);
       return response.blob();

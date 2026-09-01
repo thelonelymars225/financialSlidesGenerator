@@ -44,7 +44,12 @@ class CreateJobRequest(BaseModel):
                 raise ValueError(f"file content exceeds the {MAX_FILE_BYTES}-byte limit")
         return self
 
-    def to_command(self, owner_id: str) -> CreateJobCommand:
+    def to_command(
+        self,
+        owner_id: str,
+        *,
+        created_by: str | None = None,
+    ) -> CreateJobCommand:
         file_data: bytes | None = None
         if self.file_content_base64 is not None:
             try:
@@ -61,6 +66,8 @@ class CreateJobRequest(BaseModel):
             deck_purpose=self.deck_purpose,
             slide_count=self.slide_count,
             request_key=self.request_key,
+            organization_id=owner_id,
+            created_by=created_by,
         )
 
 

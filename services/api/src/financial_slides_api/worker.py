@@ -66,6 +66,17 @@ class ExtractionJobWorker:
             processed += 1
         return processed
 
+    def run_job(self, job_id: str, owner_id: str) -> bool:
+        """Idempotently claim and process the exact job named by a workflow."""
+
+        job = self._store.claim(job_id, owner_id, self._clock())
+        if job is None:
+            latest = self._store.get(job_id, owner_id)
+            return latest is not None and latest.status is JobStatus.SUCCEEDED
+        self._run(job)
+        latest = self._store.get(job_id, owner_id)
+        return latest is not None and latest.status is JobStatus.SUCCEEDED
+
     def _run(self, job: Job) -> None:
         latest = self._store.get(job.id, job.owner_id)
         if latest is None or latest.status is JobStatus.CANCELLED:

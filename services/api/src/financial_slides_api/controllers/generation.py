@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 
 from financial_slides_api.domain.generation import (
     GenerationConflictError,
@@ -16,13 +16,15 @@ from financial_slides_api.schemas.generation import (
     GenerationResultResponse,
     StartGenerationRequest,
 )
+from financial_slides_api.quotas import SubmissionIdentity
 from financial_slides_api.services.generation import (
     SlideGenerationService,
     get_generation_service,
 )
+from financial_slides_api.security import Identity, RequestIdentity, require_manager
 
 router = APIRouter(tags=["slide-generation"])
-OwnerId = Annotated[str, Header(alias="X-Owner-ID", min_length=1, max_length=128)]
+ManagerIdentity = Annotated[RequestIdentity, Depends(require_manager)]
 
 
 def generation_service_dependency() -> SlideGenerationService:
@@ -50,12 +52,12 @@ def start_generation(
     request: StartGenerationRequest,
     background: BackgroundTasks,
     service: GenerationService,
-    owner_id: OwnerId = "local-development",
+    identity: SubmissionIdentity,
 ) -> GenerationJobResponse:
     try:
         job = service.start(
             str(extraction_job_id),
-            owner_id,
+            identity.organization_id,
             request.deck_type,
             request_key=(request.request_key or f"auto:{extraction_job_id}:{request.deck_type}"),
             density_profile=request.density,
@@ -72,10 +74,12 @@ def start_generation(
 def get_generation(
     job_id: UUID,
     service: GenerationService,
-    owner_id: OwnerId = "local-development",
+    identity: Identity,
 ) -> GenerationJobResponse:
     try:
-        return GenerationJobResponse.from_job(service.get(str(job_id), owner_id))
+        return GenerationJobResponse.from_job(
+            service.get(str(job_id), identity.organization_id)
+        )
     except GenerationNotFoundError as error:
         raise _not_found(error) from error
 
@@ -84,10 +88,10 @@ def get_generation(
 def get_generation_result(
     job_id: UUID,
     service: GenerationService,
-    owner_id: OwnerId = "local-development",
+    identity: Identity,
 ) -> GenerationResultResponse:
     try:
-        job = service.result(str(job_id), owner_id)
+        job = service.result(str(job_id), identity.organization_id)
     except GenerationNotFoundError as error:
         raise _not_found(error) from error
     except GenerationNotReadyError as error:
@@ -103,10 +107,10 @@ def get_generation_result(
 def download_artifact(
     job_id: UUID,
     service: GenerationService,
-    owner_id: OwnerId = "local-development",
+    identity: Identity,
 ) -> Response:
     try:
-        artifact = service.artifact(str(job_id), owner_id)
+        artifact = service.artifact(str(job_id), identity.organization_id)
     except GenerationNotFoundError as error:
         raise _not_found(error) from error
     except GenerationNotReadyError as error:
@@ -123,10 +127,10 @@ def retry_generation(
     job_id: UUID,
     background: BackgroundTasks,
     service: GenerationService,
-    owner_id: OwnerId = "local-development",
+    identity: Identity,
 ) -> GenerationJobResponse:
     try:
-        job = service.retry(str(job_id), owner_id)
+        job = service.retry(str(job_id), identity.organization_id)
     except GenerationNotFoundError as error:
         raise _not_found(error) from error
     except GenerationConflictError as error:
@@ -139,10 +143,10 @@ def retry_generation(
 def delete_generation_output(
     job_id: UUID,
     service: GenerationService,
-    owner_id: OwnerId = "local-development",
+    identity: ManagerIdentity,
 ) -> Response:
     try:
-        service.delete_output(str(job_id), owner_id)
+        service.delete_output(str(job_id), identity.organization_id)
     except GenerationNotFoundError as error:
         raise _not_found(error) from error
     except GenerationConflictError as error:

@@ -1,69 +1,71 @@
-# Cloud deployment
+# Production deployment
 
-The demo deploys as two services from one repository:
+The production topology has a Cloudflare Pages frontend, a private-to-database
+FastAPI service, a Temporal worker, Supabase Auth/PostgreSQL/Storage in Frankfurt
+(`eu-central-1`), and a Temporal Cloud EU namespace. The local memory/SQLite
+profile is for development only.
 
-- Cloudflare Pages builds `apps/web`.
-- Railway runs the self-contained FastAPI service using `Dockerfile.api`.
-- Extraction is scheduled as an in-process background task after submission.
+## Order of operations
 
-The demo runtime keeps extraction and generation jobs in memory. It has no
-Supabase/PostgreSQL dependency, and its jobs disappear whenever Railway restarts
-or redeploys. Restore a durable adapter before using this with customer data.
+1. Create the Supabase project in Frankfurt and apply all files in
+   `supabase/migrations` with the Supabase CLI.
+2. Create a Temporal Cloud EU namespace and separate API key for the worker.
+3. Deploy the API from `Dockerfile.api` and worker from `Dockerfile.worker`.
+4. Deploy `apps/web` to Cloudflare Pages and set the API's exact Pages/custom
+   domain in `CORS_ALLOWED_ORIGINS`.
+5. Run authenticated smoke tests for two organizations, including an attempted
+   cross-tenant read, signed upload, cancellation, deletion, and quota response.
 
-## Railway
+## API and worker configuration
 
-Create one Railway service sourced from this GitHub repository and the release
-branch. Leave the root directory at `/` because the
-Python packages and Node presentation packages share root lockfiles.
-
-| Service | Config file | Public domain |
-| --- | --- | --- |
-| `financial-slides-api` | `/deploy/railway-api.toml` | Generate one |
-Do not set `DATABASE_URL`, `SUPABASE_URL`, or `SUPABASE_SECRET_KEY` for this
-runtime. Remove `FINANCIAL_SLIDES_STORE`, or set it to `memory` explicitly.
+Store these as platform secrets, never frontend variables:
 
 ```dotenv
 APP_ENV=production
-FINANCIAL_SLIDES_STORE=memory
+AUTH_REQUIRED=true
+FINANCIAL_SLIDES_STORE=postgres
+DATABASE_URL=postgresql://...?sslmode=require
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_SECRET_KEY=...
+SUPABASE_JWT_AUDIENCE=authenticated
+WORKFLOW_BACKEND=temporal
+TEMPORAL_ADDRESS=<namespace>.<region>.tmprl.cloud:7233
+TEMPORAL_NAMESPACE=<namespace>.<account>
+TEMPORAL_API_KEY=...
+TEMPORAL_TASK_QUEUE=financial-slides-extraction-v1
+CORS_ALLOWED_ORIGINS=https://<pages-domain>,https://<custom-domain>
+API_MAX_BODY_BYTES=3145728
+JOB_SUBMISSIONS_PER_ORG_HOUR=60
 FINANCIAL_SLIDES_SOURCE_RETENTION_HOURS=24
 FINANCIAL_SLIDES_ARTIFACT_RETENTION_HOURS=24
 ```
 
-Set the hosted-model variables on the API service:
+If the model provider is enabled, also configure its server-only credentials and
+`MODEL_DATA_RETENTION_DISABLED=true`. Each tenant must separately opt in through
+`organizations.hosted_ai_enabled`; the worker otherwise refuses hosted analysis.
+
+Only set `FORWARDED_ALLOW_IPS` to the documented proxy CIDRs for the deployment
+platform. The image defaults to loopback and does not trust arbitrary forwarded
+headers.
+
+## Frontend configuration
+
+These are intentionally public build values:
 
 ```dotenv
-MODEL_PROVIDER=deepseek
-MODEL_API_KEY=<server-only provider key>
-MODEL_DATA_RETENTION_DISABLED=true
+VITE_API_BASE_URL=https://<api-domain>
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 ```
 
-The separate Railway worker service and Supabase variables are intentionally
-unused in this demo profile.
+The application stores only the chosen organization ID locally. Supabase stores
+and refreshes its browser session; API calls send the access token and selected
+organization, and the server always rechecks membership.
 
-## Cloudflare Pages
+## Release checks
 
-Create one Pages project from the same repository with these build settings:
-
-| Setting | Value |
-| --- | --- |
-| Root directory | `/` |
-| Build command | `corepack enable && pnpm install --frozen-lockfile && pnpm --filter @financial-slides/web build` |
-| Build output directory | `apps/web/dist` |
-| Node version | `.node-version` |
-| Build variable | `VITE_API_BASE_URL=https://<api-domain>.up.railway.app` |
-
-After Cloudflare assigns the Pages domain, set the API service variable
-`CORS_ALLOWED_ORIGINS` to that exact `https://...pages.dev` origin. Add the
-custom domain later as a second comma-separated origin.
-
-For an initial private demo, deploy `dev`. Before a customer-facing release,
-promote the tested commit to `main`, add authentication-derived owner IDs, and
-persist generation jobs and presentation artifacts outside API process memory.
-
-## Smoke test
-
-1. Confirm `GET https://<api-domain>/health` returns HTTP 200.
-2. Open the Pages URL and submit safe pasted text.
-3. Confirm the in-process worker changes the extraction job from queued to succeeded.
-4. Generate and download a PowerPoint file.
-5. Delete the test source and generated artifact.
+Run the monorepo test/build workflow, CodeQL, dependency review, `pnpm audit`,
+`pip-audit`, Supabase database lint/advisors, and both container builds. Confirm
+the `/health` route, CSP/security headers, private bucket status, outbox lag,
+Temporal worker pollers, and alert routing. Restore a database backup in a test
+project before the first customer release and at least quarterly thereafter.

@@ -2,8 +2,10 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 import psycopg
 from psycopg.errors import UniqueViolation
@@ -19,7 +21,8 @@ from financial_slides_api.domain.jobs import (
 from financial_slides_api.infrastructure.job_records import job_to_record, record_to_job
 
 JOB_COLUMNS = """
-    id, owner_id, request_key, source_hash, input_mode, file_name,
+    id, owner_id, organization_id, created_by, state_version,
+    request_key, source_hash, input_mode, file_name,
     declared_media_type, deck_purpose, slide_count, status, created_at,
     updated_at, available_at, started_at, finished_at, attempt_count,
     max_attempts, cancel_requested, failure_code, failure_message,
@@ -29,7 +32,8 @@ JOB_COLUMNS = """
 INSERT_JOB_SQL = f"""
     insert into financial_slides.extraction_jobs ({JOB_COLUMNS})
     values (
-        %(id)s, %(owner_id)s, %(request_key)s, %(source_hash)s, %(input_mode)s,
+        %(id)s, %(owner_id)s, %(organization_id)s, %(created_by)s, %(state_version)s,
+        %(request_key)s, %(source_hash)s, %(input_mode)s,
         %(file_name)s, %(declared_media_type)s, %(deck_purpose)s, %(slide_count)s,
         %(status)s, %(created_at)s, %(updated_at)s, %(available_at)s,
         %(started_at)s, %(finished_at)s, %(attempt_count)s, %(max_attempts)s,
@@ -53,8 +57,9 @@ UPDATE_JOB_SQL = """
         route=%(route)s,
         duration_ms=%(duration_ms)s,
         retries=%(retries)s,
-        external_cost_usd=%(external_cost_usd)s
-    where id=%(id)s
+        external_cost_usd=%(external_cost_usd)s,
+        state_version=state_version + 1
+    where id=%(id)s and state_version=%(state_version)s
 """
 
 CLAIM_NEXT_SQL = f"""
@@ -93,6 +98,47 @@ class PostgresJobStore:
                 "request_key already belongs to different source content"
             ) from error
 
+    def create_with_source(self, job: Job, source: StoredSource) -> Job:
+        """Persist the source and durable workflow request in one transaction."""
+
+        try:
+            with self._connection() as connection:
+                connection.execute(INSERT_JOB_SQL, job_to_record(job))
+                connection.execute(
+                    """
+                    insert into financial_slides.extraction_sources (
+                        job_id, source_text, file_data
+                    ) values (%s, %s, %s)
+                    """,
+                    (job.id, source.source_text, source.file_data),
+                )
+                connection.execute(
+                    """
+                    insert into financial_slides.workflow_outbox (
+                        id, organization_id, aggregate_id, event_type, payload
+                    ) values (%s, %s, %s, 'extraction.requested', %s)
+                    """,
+                    (
+                        uuid5(NAMESPACE_URL, f"financial-slides:extract:{job.id}"),
+                        job.organization_id,
+                        job.id,
+                        Jsonb(
+                            {
+                                "job_id": job.id,
+                                "organization_id": job.organization_id,
+                            }
+                        ),
+                    ),
+                )
+            return job
+        except UniqueViolation as error:
+            existing = self.find_by_request_key(job.owner_id, job.request_key)
+            if existing and existing.source_hash == job.source_hash:
+                return existing
+            raise JobConflictError(
+                "request_key already belongs to different source content"
+            ) from error
+
     def find_by_request_key(self, owner_id: str, request_key: str) -> Job | None:
         return self._fetch_one(
             f"""
@@ -122,8 +168,8 @@ class PostgresJobStore:
         with self._connection() as connection:
             cursor = connection.execute(UPDATE_JOB_SQL, job_to_record(job))
             if cursor.rowcount != 1:
-                raise KeyError(job.id)
-        return job
+                raise RuntimeError(f"job {job.id} changed concurrently")
+        return replace(job, state_version=job.state_version + 1)
 
     def claim_next(self, now: datetime) -> Job | None:
         with self._connection() as connection:
@@ -139,12 +185,47 @@ class PostgresJobStore:
                     started_at=%(started_at)s,
                     attempt_count=%(attempt_count)s,
                     failure_code=null,
-                    failure_message=null
-                where id=%(id)s and status='queued'
+                    failure_message=null,
+                    state_version=state_version + 1
+                where id=%(id)s and status='queued' and state_version=%(state_version)s
                 """,
                 job_to_record(claimed),
             )
-            return claimed if cursor.rowcount == 1 else None
+            return replace(claimed, state_version=claimed.state_version + 1) if cursor.rowcount == 1 else None
+
+    def claim(self, job_id: str, owner_id: str, now: datetime) -> Job | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                f"""
+                select {JOB_COLUMNS}
+                from financial_slides.extraction_jobs
+                where id = %s and owner_id = %s and status = 'queued'
+                    and available_at <= %s
+                for update skip locked
+                """,
+                (job_id, owner_id, now),
+            ).fetchone()
+            if row is None:
+                return None
+            claimed = mark_running(record_to_job(row), now)
+            cursor = connection.execute(
+                """
+                update financial_slides.extraction_jobs set
+                    status=%(status)s,
+                    updated_at=%(updated_at)s,
+                    started_at=%(started_at)s,
+                    attempt_count=%(attempt_count)s,
+                    failure_code=null,
+                    failure_message=null,
+                    state_version=state_version + 1
+                where id=%(id)s and owner_id=%(owner_id)s and status='queued'
+                    and state_version=%(state_version)s
+                """,
+                job_to_record(claimed),
+            )
+            if cursor.rowcount != 1:
+                return None
+            return replace(claimed, state_version=claimed.state_version + 1)
 
     def recover_stale(self, now: datetime, lease_seconds: float) -> int:
         cutoff = now - timedelta(seconds=lease_seconds)
@@ -156,7 +237,8 @@ class PostgresJobStore:
                     updated_at=%s,
                     available_at=%s,
                     failure_code='worker_interrupted',
-                    failure_message='Worker lease expired; the job was safely requeued.'
+                    failure_message='Worker lease expired; the job was safely requeued.',
+                    state_version=state_version + 1
                 where status='running'
                     and updated_at <= %s
                     and attempt_count < max_attempts
@@ -170,7 +252,8 @@ class PostgresJobStore:
                     updated_at=%s,
                     finished_at=%s,
                     failure_code='worker_interrupted',
-                    failure_message='Worker lease expired after the final attempt.'
+                    failure_message='Worker lease expired after the final attempt.',
+                    state_version=state_version + 1
                 where status='running'
                     and updated_at <= %s
                     and attempt_count >= max_attempts

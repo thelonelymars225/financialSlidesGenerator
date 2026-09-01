@@ -21,6 +21,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+supabase/.temp/
+supabase/.branches/
 
 # Generated and customer data
 .data/

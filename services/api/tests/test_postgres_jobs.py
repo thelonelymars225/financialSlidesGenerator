@@ -85,7 +85,10 @@ def test_migration_keeps_data_private_and_buckets_restricted() -> None:
     assert "create schema if not exists financial_slides" in migrations
     assert "enable row level security" in migrations
     assert "revoke all on all tables" in migrations
-    assert migrations.count('create policy "deny direct client access"') == 3
+    assert migrations.count('create policy "deny direct client access"') >= 11
+    assert "financial_slides.organization_memberships" in migrations
+    assert "financial_slides.workflow_outbox" in migrations
+    assert "financial_slides.consume_hourly_quota" in migrations
     assert "'source-documents'" in migrations
     assert "'generated-presentations'" in migrations
     assert migrations.count("\n        false,") == 2

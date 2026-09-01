@@ -4,6 +4,7 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,9 @@ class SQLiteJobStore:
                 CREATE TABLE IF NOT EXISTS extraction_jobs (
                     id TEXT PRIMARY KEY,
                     owner_id TEXT NOT NULL,
+                    organization_id TEXT,
+                    created_by TEXT,
+                    state_version INTEGER NOT NULL DEFAULT 0,
                     request_key TEXT NOT NULL,
                     source_hash TEXT NOT NULL,
                     input_mode TEXT NOT NULL,
@@ -85,6 +89,18 @@ class SQLiteJobStore:
                 );
                 """
             )
+            existing_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(extraction_jobs)")
+            }
+            for name, definition in (
+                ("organization_id", "TEXT"),
+                ("created_by", "TEXT"),
+                ("state_version", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if name not in existing_columns:
+                    connection.execute(
+                        f"ALTER TABLE extraction_jobs ADD COLUMN {name} {definition}"
+                    )
 
     def create(self, job: Job) -> Job:
         try:
@@ -92,13 +108,15 @@ class SQLiteJobStore:
                 connection.execute(
                     """
                     INSERT INTO extraction_jobs (
-                        id, owner_id, request_key, source_hash, input_mode, file_name,
+                        id, owner_id, organization_id, created_by, state_version,
+                        request_key, source_hash, input_mode, file_name,
                         declared_media_type, deck_purpose, slide_count, status, created_at,
                         updated_at, available_at, started_at, finished_at, attempt_count,
                         max_attempts, cancel_requested, failure_code, failure_message,
                         route, duration_ms, retries, external_cost_usd
                     ) VALUES (
-                        :id, :owner_id, :request_key, :source_hash, :input_mode, :file_name,
+                        :id, :owner_id, :organization_id, :created_by, :state_version,
+                        :request_key, :source_hash, :input_mode, :file_name,
                         :declared_media_type, :deck_purpose, :slide_count, :status, :created_at,
                         :updated_at, :available_at, :started_at, :finished_at, :attempt_count,
                         :max_attempts, :cancel_requested, :failure_code, :failure_message,
@@ -144,14 +162,15 @@ class SQLiteJobStore:
                     cancel_requested=:cancel_requested, failure_code=:failure_code,
                     failure_message=:failure_message, route=:route,
                     duration_ms=:duration_ms, retries=:retries,
-                    external_cost_usd=:external_cost_usd
-                WHERE id=:id
+                    external_cost_usd=:external_cost_usd,
+                    state_version=state_version + 1
+                WHERE id=:id AND state_version=:state_version
                 """,
                 values,
             )
             if cursor.rowcount != 1:
-                raise KeyError(job.id)
-        return job
+                raise RuntimeError(f"job {job.id} changed concurrently")
+        return replace(job, state_version=job.state_version + 1)
 
     def claim_next(self, now: datetime) -> Job | None:
         connection = sqlite3.connect(self.database_path, timeout=10, isolation_level=None)
@@ -176,13 +195,53 @@ class SQLiteJobStore:
                 """
                 UPDATE extraction_jobs SET status=:status, updated_at=:updated_at,
                     started_at=:started_at, attempt_count=:attempt_count,
-                    failure_code=NULL, failure_message=NULL
-                WHERE id=:id AND status='queued'
+                    failure_code=NULL, failure_message=NULL,
+                    state_version=state_version + 1
+                WHERE id=:id AND status='queued' AND state_version=:state_version
                 """,
                 values,
             )
             connection.execute("COMMIT")
-            return claimed if cursor.rowcount == 1 else None
+            return replace(claimed, state_version=claimed.state_version + 1) if cursor.rowcount == 1 else None
+        except BaseException:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
+        finally:
+            connection.close()
+
+    def claim(self, job_id: str, owner_id: str, now: datetime) -> Job | None:
+        connection = sqlite3.connect(self.database_path, timeout=10, isolation_level=None)
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT * FROM extraction_jobs
+                WHERE id = ? AND owner_id = ? AND status = 'queued' AND available_at <= ?
+                """,
+                (job_id, owner_id, now.isoformat()),
+            ).fetchone()
+            if row is None:
+                connection.execute("COMMIT")
+                return None
+            claimed = mark_running(record_to_job(row), now)
+            values = job_to_record(claimed)
+            cursor = connection.execute(
+                """
+                UPDATE extraction_jobs SET status=:status, updated_at=:updated_at,
+                    started_at=:started_at, attempt_count=:attempt_count,
+                    failure_code=NULL, failure_message=NULL,
+                    state_version=state_version + 1
+                WHERE id=:id AND owner_id=:owner_id AND status='queued'
+                    AND state_version=:state_version
+                """,
+                values,
+            )
+            connection.execute("COMMIT")
+            if cursor.rowcount != 1:
+                return None
+            return replace(claimed, state_version=claimed.state_version + 1)
         except BaseException:
             if connection.in_transaction:
                 connection.execute("ROLLBACK")
@@ -199,7 +258,8 @@ class SQLiteJobStore:
                 UPDATE extraction_jobs SET
                     status='queued', updated_at=?, available_at=?,
                     failure_code='worker_interrupted',
-                    failure_message='Worker lease expired; the job was safely requeued.'
+                    failure_message='Worker lease expired; the job was safely requeued.',
+                    state_version=state_version + 1
                 WHERE status='running' AND updated_at <= ? AND attempt_count < max_attempts
                 """,
                 (now.isoformat(), now.isoformat(), cutoff),
@@ -209,7 +269,8 @@ class SQLiteJobStore:
                 UPDATE extraction_jobs SET
                     status='failed', updated_at=?, finished_at=?,
                     failure_code='worker_interrupted',
-                    failure_message='Worker lease expired after the final attempt.'
+                    failure_message='Worker lease expired after the final attempt.',
+                    state_version=state_version + 1
                 WHERE status='running' AND updated_at <= ? AND attempt_count >= max_attempts
                 """,
                 (now.isoformat(), now.isoformat(), cutoff),

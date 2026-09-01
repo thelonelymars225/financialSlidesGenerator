@@ -8,7 +8,7 @@ import {
 import { ExtractionApiError } from "../api";
 import { fileRequest } from "../file";
 import { useExtractionJob } from "../hooks/useExtractionJob";
-import type { CreateJobRequest, DeckPurpose, InputMode } from "../types";
+import type { DeckPurpose, InputMode, JobSubmission } from "../types";
 import { ExtractionResultPreview } from "./ExtractionResultPreview";
 import { JobStatusPanel } from "./JobStatusPanel";
 
@@ -27,7 +27,7 @@ export function ExtractionWorkspace() {
   );
   const [jobId, setJobId] = useState<string | null>(null);
   const [requestKey, setRequestKey] = useState(newRequestKey);
-  const [lastRequest, setLastRequest] = useState<CreateJobRequest | null>(null);
+  const [lastRequest, setLastRequest] = useState<JobSubmission | null>(null);
   const extraction = useExtractionJob(jobId);
 
   const errorMessage = useMemo(() => {
@@ -37,7 +37,7 @@ export function ExtractionWorkspace() {
     return error instanceof Error ? error.message : "The extraction request failed.";
   }, [extraction.cancel.error, extraction.create.error, extraction.job.error, extraction.result.error]);
 
-  async function buildRequest(): Promise<CreateJobRequest> {
+  async function buildRequest(): Promise<JobSubmission> {
     if (inputMode === "file") {
       if (!file) throw new Error("Choose a PDF before submitting.");
       return fileRequest(file, deckPurpose, slideCount, requestKey);

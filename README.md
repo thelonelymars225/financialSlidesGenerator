@@ -26,6 +26,9 @@ docs/                          BRD, architecture, and decision records
 
 See [docs/architecture.md](docs/architecture.md) for why these boundaries exist.
 Cloud hosting instructions live in [docs/deployment.md](docs/deployment.md).
+The production threat model and workflow handoff are documented in
+[docs/security.md](docs/security.md) and
+[docs/workflow-integration.md](docs/workflow-integration.md).
 
 ## Prerequisites
 

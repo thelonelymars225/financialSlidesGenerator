@@ -19,7 +19,7 @@ from financial_slides_api.domain.jobs import (
     StoredSource,
     request_cancel,
 )
-from financial_slides_api.infrastructure.audit import MetadataAuditLogger, NullAuditSink
+from financial_slides_api.infrastructure.audit import NullAuditSink, configured_audit_sink
 from financial_slides_api.infrastructure.memory_jobs import InMemoryJobStore
 from financial_slides_api.infrastructure.sqlite_jobs import SQLiteJobStore
 from financial_slides_api.ports.jobs import JobRepository, JobStore, ResultStore, SourceStore
@@ -91,19 +91,27 @@ class ExtractionJobService:
             created_at=now,
             updated_at=now,
             available_at=now,
+            organization_id=command.organization_id or command.owner_id,
+            created_by=command.created_by,
             max_attempts=self._max_attempts,
         )
-        job = self._repository.create(job)
-        self._sources.put_source(
-            job.id,
-            StoredSource(
-                input_mode=command.input_mode,
-                source_text=command.source_text,
-                file_name=command.file_name,
-                file_data=command.file_data,
-                declared_media_type=command.declared_media_type,
-            ),
+        source = StoredSource(
+            input_mode=command.input_mode,
+            source_text=command.source_text,
+            file_name=command.file_name,
+            file_data=command.file_data,
+            declared_media_type=command.declared_media_type,
         )
+        atomic_create = (
+            getattr(self._repository, "create_with_source", None)
+            if os.getenv("WORKFLOW_BACKEND", "local").strip().lower() == "temporal"
+            else None
+        )
+        if atomic_create is not None:
+            job = atomic_create(job, source)
+        else:
+            job = self._repository.create(job)
+            self._sources.put_source(job.id, source)
         return job
 
     def get(self, job_id: str, owner_id: str) -> Job:
@@ -193,7 +201,7 @@ def get_job_service() -> ExtractionJobService:
         store,
         retention=store,
         policy=get_retention_policy(),
-        audit=MetadataAuditLogger(),
+        audit=configured_audit_sink(),
     )
 
 

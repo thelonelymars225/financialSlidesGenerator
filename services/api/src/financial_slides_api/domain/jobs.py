@@ -46,6 +46,9 @@ class Job:
     created_at: datetime
     updated_at: datetime
     available_at: datetime
+    organization_id: str | None = None
+    created_by: str | None = None
+    state_version: int = 0
     started_at: datetime | None = None
     finished_at: datetime | None = None
     attempt_count: int = 0
@@ -66,6 +69,8 @@ class CreateJobCommand:
     deck_purpose: str
     slide_count: int
     request_key: str | None = None
+    organization_id: str | None = None
+    created_by: str | None = None
 
 
 @dataclass(frozen=True)

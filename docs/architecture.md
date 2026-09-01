@@ -112,9 +112,9 @@ web -> API -> job queue -> worker
 - The worker claims queued jobs atomically, enforces bounded attempts and work
   per run, emits the canonical extracted-document contract, records route,
   duration, retry count, and estimated external cost, and stores typed failures.
-- `X-Owner-ID` scopes status, result, and cancellation access. The development
-  default is `local-development`; production authentication remains a separate
-  adapter concern.
+- Supabase JWT claims plus a server-side membership lookup scope status, result,
+  cancellation, and deletion. `X-Owner-ID` exists only as a local-development
+  compatibility header and is rejected in production.
 
 ## Supabase persistence boundary
 
@@ -123,9 +123,19 @@ web -> API -> job queue -> worker
 - Application tables live in the private `financial_slides` schema, have RLS
   enabled for defense in depth, and are not part of the browser-facing Data API.
 - `source-documents` and `generated-presentations` are private buckets with
-  explicit MIME and size limits. The API mediates access; browser policies and
-  signed URLs wait for the authentication ticket.
+  explicit MIME and size limits. The API issues short-lived upload URLs after
+  authorization and verifies uploaded content before creating a job.
 - `DATABASE_URL` selects the PostgreSQL adapter in hosted environments. SQLite
   remains the default when no production database URL is configured.
 - Secret or service-role credentials are server-only and never use a frontend
   environment-variable prefix.
+
+## Temporal workflow boundary
+
+- Job, source, and outbox event creation is one PostgreSQL transaction.
+- The dispatcher uses locked, leased outbox claims and deterministic Temporal
+  workflow IDs, giving an idempotent at-least-once handoff.
+- Workflows carry opaque tenant/job identifiers only. Activities load private
+  data from the server-side store and use optimistic job state transitions.
+- Local background tasks remain available for tests and development; production
+  configuration fails closed unless the PostgreSQL/Temporal path is selected.

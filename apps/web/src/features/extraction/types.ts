@@ -48,6 +48,16 @@ export type CreateJobRequest = {
   request_key: string;
 };
 
+export type CreateFileJobRequest = {
+  input_mode: "file";
+  file: File;
+  deck_purpose: DeckPurpose;
+  slide_count: number;
+  request_key: string;
+};
+
+export type JobSubmission = CreateJobRequest | CreateFileJobRequest;
+
 export type SourceReference = {
   sourceId?: string;
   pageNumber?: number;
