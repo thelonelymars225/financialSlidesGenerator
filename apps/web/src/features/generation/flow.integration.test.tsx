@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { createGenerationApi, GenerationApiError } from "./api";
+import { currentGenerationResult } from "./components/SlideGenerationPanel";
 import { SlidePreview } from "./components/SlidePreview";
 import { generatePollAndLoad, waitForGeneration } from "./flow";
 import { generationFailureGuidance } from "./state";
@@ -49,6 +50,25 @@ const result: GenerationResult = {
 };
 
 describe("extraction → analysis → preview → PowerPoint integration", () => {
+  it("never displays a cached result for a different or failed current job", () => {
+    expect(currentGenerationResult(job("failed"), result)).toBeUndefined();
+    expect(currentGenerationResult({ ...job("succeeded"), id: "new-job" }, result)).toBeUndefined();
+    expect(currentGenerationResult(job("succeeded"), result)).toBe(result);
+  });
+
+  it("provides actionable analysis-provider failure guidance", () => {
+    expect(generationFailureGuidance({
+      code: "analysis_timeout",
+      message: "safe timeout",
+      retryable: true,
+    })).toContain("took too long");
+    expect(generationFailureGuidance({
+      code: "analysis_authentication_failed",
+      message: "safe auth failure",
+      retryable: false,
+    })).toContain("credentials");
+  });
+
   it("renders a safe preview and downloads the PowerPoint artifact", async () => {
     const responses = [
       new Response(JSON.stringify(job("queued")), { status: 202 }),

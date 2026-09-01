@@ -39,6 +39,14 @@ PREFLIGHT_CLI = ROOT / "packages/presentation-harness/scripts/preflight-deck.mjs
 OWNER_HEADERS = {"X-Owner-ID": "integration-owner"}
 
 
+def test_api_docker_context_excludes_local_environment_files() -> None:
+    dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+
+    assert ".env" in dockerignore
+    assert ".env.*" in dockerignore
+    assert "!.env.example" in dockerignore
+
+
 def test_generation_fails_closed_to_deterministic_without_retention_assertion() -> None:
     provider = _analysis_provider_for_generation(
         {
@@ -48,6 +56,20 @@ def test_generation_fails_closed_to_deterministic_without_retention_assertion() 
     )
 
     assert provider.name == "deterministic"
+
+
+def test_production_rejects_deterministic_or_incomplete_hosted_configuration() -> None:
+    with pytest.raises(RuntimeError, match="hosted MODEL_PROVIDER"):
+        _analysis_provider_for_generation({"APP_ENV": "production"})
+
+    with pytest.raises(RuntimeError, match="MODEL_DATA_RETENTION_DISABLED"):
+        _analysis_provider_for_generation(
+            {
+                "APP_ENV": "production",
+                "MODEL_PROVIDER": "deepseek",
+                "MODEL_API_KEY": "test-secret",
+            }
+        )
 
 
 class RecordingRenderer:

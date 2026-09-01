@@ -21,6 +21,7 @@ export function useSlideGeneration() {
       requestKey: string;
       density: PresentationDensity;
     }) => generationApi.start(extractionJobId, deckType, requestKey, density),
+    onMutate: () => setJobId(null),
     onSuccess: (job) => setJobId(job.id),
   });
 

@@ -19,6 +19,8 @@ from financial_slides_api.domain.analysis import (
     AnalysisResult,
     AnalysisSourceBlock,
     AnalysisTelemetry,
+    ProviderError,
+    ProviderFailureCode,
     ProviderTelemetry,
     SourceNumber,
 )
@@ -30,6 +32,7 @@ from financial_slides_api.domain.presentation import (
 from financial_slides_api.ports.analysis import AnalysisProvider
 
 MAX_FEEDBACK_ERRORS = 20
+MAX_ANALYSIS_INPUT_CHARACTERS = 400_000
 SCALE_FACTORS = {
     "k": 1_000,
     "thousand": 1_000,
@@ -143,12 +146,14 @@ def build_analysis_request(
     document: dict[str, Any],
     density: PresentationDensity | str = PresentationDensity.BALANCED,
     slide_count: int = 8,
+    *,
+    max_input_characters: int = MAX_ANALYSIS_INPUT_CHARACTERS,
 ) -> AnalysisRequest:
-    """Keep only evidence-bearing content needed by a model provider."""
+    """Keep numeric evidence and nearby context within a predictable input budget."""
 
     profile, constraints = resolve_density_profile(density)
 
-    blocks = tuple(
+    all_blocks = tuple(
         AnalysisSourceBlock(
             page_number=page["pageNumber"],
             block_id=block["id"],
@@ -159,9 +164,42 @@ def build_analysis_request(
         for page in document["pages"]
         for block in sorted(page["blocks"], key=lambda item: item["order"])
     )
+    if max_input_characters < 1:
+        raise ValueError("max_input_characters must be positive")
+
+    evidence_indexes = {index for index, block in enumerate(all_blocks) if block.numbers}
+    evidence_characters = sum(len(all_blocks[index].text) for index in evidence_indexes)
+    if evidence_characters > max_input_characters:
+        raise AnalysisError(
+            AnalysisFailureCode.INPUT_TOO_LARGE,
+            "financial evidence exceeds the analysis input limit",
+        )
+
+    selected_indexes = set(evidence_indexes)
+    if evidence_indexes:
+        for index in evidence_indexes:
+            for neighbor in (index - 1, index + 1):
+                if (
+                    0 <= neighbor < len(all_blocks)
+                    and all_blocks[neighbor].page_number == all_blocks[index].page_number
+                ):
+                    selected_indexes.add(neighbor)
+    else:
+        selected_indexes.update(range(len(all_blocks)))
+
+    included_indexes = set(evidence_indexes)
+    remaining_context_characters = max_input_characters - evidence_characters
+    for index in sorted(selected_indexes - evidence_indexes):
+        block_characters = len(all_blocks[index].text)
+        if block_characters <= remaining_context_characters:
+            included_indexes.add(index)
+            remaining_context_characters -= block_characters
+
+    blocks = [all_blocks[index] for index in sorted(included_indexes)]
+
     return AnalysisRequest(
         document_id=document["documentId"],
-        blocks=blocks,
+        blocks=tuple(blocks),
         requested_slide_count=resolve_slide_count(slide_count),
         density_profile=profile,
         density_constraints=constraints,
@@ -337,6 +375,43 @@ class FinancialAnalysisService:
                     "analysis provider timed out",
                     retryable=True,
                 ) from error
+            except ProviderError as error:
+                failures = {
+                    ProviderFailureCode.AUTHENTICATION: (
+                        AnalysisFailureCode.AUTHENTICATION_FAILED,
+                        "analysis provider authentication failed",
+                    ),
+                    ProviderFailureCode.PAYMENT_REQUIRED: (
+                        AnalysisFailureCode.PAYMENT_REQUIRED,
+                        "analysis provider quota or balance is unavailable",
+                    ),
+                    ProviderFailureCode.RATE_LIMITED: (
+                        AnalysisFailureCode.RATE_LIMITED,
+                        "analysis provider rate limit reached",
+                    ),
+                    ProviderFailureCode.INVALID_REQUEST: (
+                        AnalysisFailureCode.INVALID_REQUEST,
+                        "analysis provider rejected the request",
+                    ),
+                    ProviderFailureCode.TIMEOUT: (
+                        AnalysisFailureCode.TIMEOUT,
+                        "analysis provider timed out",
+                    ),
+                    ProviderFailureCode.NETWORK: (
+                        AnalysisFailureCode.NETWORK_FAILURE,
+                        "analysis provider network request failed",
+                    ),
+                    ProviderFailureCode.INVALID_RESPONSE: (
+                        AnalysisFailureCode.INVALID_RESPONSE,
+                        "analysis provider returned an invalid response",
+                    ),
+                    ProviderFailureCode.UNAVAILABLE: (
+                        AnalysisFailureCode.PROVIDER_FAILURE,
+                        "analysis provider is unavailable",
+                    ),
+                }
+                code, message = failures[error.code]
+                raise AnalysisError(code, message, retryable=error.retryable) from error
             except asyncio.CancelledError:
                 raise
             except AnalysisError:
@@ -445,4 +520,5 @@ class FinancialAnalysisService:
         raise AnalysisError(
             failure_code,
             "analysis output remained invalid after bounded repair",
+            retryable=True,
         )

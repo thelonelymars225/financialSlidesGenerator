@@ -10,6 +10,14 @@ import {
   normalizePresentationDensity,
   type PresentationDensity,
 } from "../density";
+import type { GenerationJob, GenerationResult } from "../types";
+
+export function currentGenerationResult(
+  job: GenerationJob | undefined,
+  result: GenerationResult | undefined,
+): GenerationResult | undefined {
+  return job?.status === "succeeded" && result?.job.id === job.id ? result : undefined;
+}
 
 export function SlideGenerationPanel({
   extractionJobId,
@@ -27,7 +35,8 @@ export function SlideGenerationPanel({
     deckType,
     density,
   );
-  const analysis = job?.analysis ?? generation.result.data?.job.analysis;
+  const currentResult = currentGenerationResult(job, generation.result.data);
+  const analysis = job?.analysis ?? currentResult?.job.analysis;
 
   useEffect(() => {
     if (!job && generation.start.status === "idle") {
@@ -108,9 +117,9 @@ export function SlideGenerationPanel({
           )}
         </div>
       )}
-      {generation.result.data && (
+      {currentResult && (
         <>
-          <SlidePreview result={generation.result.data} />
+          <SlidePreview result={currentResult} />
           <button
             className="mt-5 w-full rounded-xl bg-orange-700 px-5 py-3 font-bold text-white disabled:opacity-45"
             disabled={generation.download.isPending}

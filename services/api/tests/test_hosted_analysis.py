@@ -4,6 +4,7 @@ import json
 import httpx2
 import pytest
 
+from financial_slides_api.domain.analysis import ProviderError, ProviderFailureCode
 from financial_slides_api.infrastructure.hosted_analysis import (
     DeepSeekAnalysisProvider,
     HostedAnalysisConfig,
@@ -153,7 +154,7 @@ def test_deepseek_canonicalizes_metric_to_exact_source_number() -> None:
 
 
 def test_analysis_timeout_uses_environment_configuration() -> None:
-    assert analysis_timeout_seconds_from_environment({}) == 30
+    assert analysis_timeout_seconds_from_environment({}) == 90
     assert analysis_timeout_seconds_from_environment({"MODEL_TIMEOUT_SECONDS": "60"}) == 60
 
 
@@ -256,11 +257,14 @@ def test_malformed_provider_response_fails_safely(provider_response: dict) -> No
         ),
     )
 
-    with pytest.raises(RuntimeError, match="invalid response"):
+    with pytest.raises(ProviderError) as failure:
         asyncio.run(provider.analyze(build_analysis_request(source_document()), ()))
 
+    assert failure.value.code is ProviderFailureCode.INVALID_RESPONSE
+    assert failure.value.retryable is True
 
-def test_http_failure_does_not_expose_provider_response() -> None:
+
+def test_http_failure_does_not_expose_provider_response(caplog) -> None:
     provider = OpenAICompatibleAnalysisProvider(
         config(),
         transport=httpx2.MockTransport(
@@ -268,8 +272,57 @@ def test_http_failure_does_not_expose_provider_response() -> None:
         ),
     )
 
-    with pytest.raises(RuntimeError) as failure:
+    with pytest.raises(ProviderError) as failure:
         asyncio.run(provider.analyze(build_analysis_request(source_document()), ()))
 
-    assert str(failure.value) == "hosted analysis provider returned an invalid response"
-    assert "credential" not in str(failure.value)
+    assert failure.value.code is ProviderFailureCode.AUTHENTICATION
+    assert failure.value.retryable is False
+    assert "credential was rejected" not in caplog.text
+    assert "test-secret" not in caplog.text
+    assert "category=authentication" in caplog.text
+
+
+def test_http_timeout_is_categorized_instead_of_becoming_invalid_response(caplog) -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ReadTimeout("provider was slow", request=request)
+
+    provider = OpenAICompatibleAnalysisProvider(
+        config(),
+        transport=httpx2.MockTransport(handler),
+    )
+
+    with pytest.raises(ProviderError) as failure:
+        asyncio.run(provider.analyze(build_analysis_request(source_document()), ()))
+
+    assert failure.value.code is ProviderFailureCode.TIMEOUT
+    assert failure.value.retryable is True
+    assert "category=timeout" in caplog.text
+    assert "provider was slow" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_code", "retryable"),
+    [
+        (402, ProviderFailureCode.PAYMENT_REQUIRED, False),
+        (400, ProviderFailureCode.INVALID_REQUEST, False),
+        (429, ProviderFailureCode.RATE_LIMITED, True),
+        (503, ProviderFailureCode.UNAVAILABLE, True),
+    ],
+)
+def test_http_statuses_are_mapped_to_safe_provider_failures(
+    status_code: int,
+    expected_code: ProviderFailureCode,
+    retryable: bool,
+) -> None:
+    provider = OpenAICompatibleAnalysisProvider(
+        config(),
+        transport=httpx2.MockTransport(
+            lambda request: httpx2.Response(status_code, text="private provider detail")
+        ),
+    )
+
+    with pytest.raises(ProviderError) as failure:
+        asyncio.run(provider.analyze(build_analysis_request(source_document()), ()))
+
+    assert failure.value.code is expected_code
+    assert failure.value.retryable is retryable

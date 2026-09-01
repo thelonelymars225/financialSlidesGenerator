@@ -1,10 +1,12 @@
 """Opt-in OpenAI-compatible financial-analysis provider."""
 
 import json
+import logging
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 
 import httpx2
 from dotenv import load_dotenv
@@ -12,6 +14,8 @@ from dotenv import load_dotenv
 from financial_slides_api.domain.analysis import (
     AnalysisRequest,
     ProviderAnalysis,
+    ProviderError,
+    ProviderFailureCode,
     ProviderTelemetry,
     SourceNumber,
 )
@@ -21,6 +25,7 @@ from financial_slides_api.infrastructure.deterministic_analysis import (
 from financial_slides_api.ports.analysis import AnalysisProvider
 
 load_dotenv()
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -28,8 +33,8 @@ class HostedAnalysisConfig:
     base_url: str
     api_key: str
     model: str
-    timeout_seconds: float = 30
-    max_output_tokens: int = 4096
+    timeout_seconds: float = 90
+    max_output_tokens: int = 8192
     input_usd_per_million: float = 0
     output_usd_per_million: float = 0
     data_retention_disabled: bool = True
@@ -77,9 +82,9 @@ def hosted_config(environment: Mapping[str, str]) -> HostedAnalysisConfig:
         base_url=environment["MODEL_BASE_URL"].rstrip("/"),
         api_key=environment["MODEL_API_KEY"],
         model=environment["MODEL_NAME"],
-        timeout_seconds=float(_positive_number(environment, "MODEL_TIMEOUT_SECONDS", "30", float)),
+        timeout_seconds=float(_positive_number(environment, "MODEL_TIMEOUT_SECONDS", "90", float)),
         max_output_tokens=int(
-            _positive_number(environment, "MODEL_MAX_OUTPUT_TOKENS", "4096", int)
+            _positive_number(environment, "MODEL_MAX_OUTPUT_TOKENS", "8192", int)
         ),
         input_usd_per_million=price("MODEL_INPUT_USD_PER_MILLION"),
         output_usd_per_million=price("MODEL_OUTPUT_USD_PER_MILLION"),
@@ -194,12 +199,67 @@ class OpenAICompatibleAnalysisProvider:
         del request
         return output
 
+    @staticmethod
+    def _request_id(response: httpx2.Response | None) -> str:
+        if response is None:
+            return "none"
+        for name in ("x-request-id", "x-ds-request-id", "request-id"):
+            value = response.headers.get(name)
+            if value:
+                return "".join(value.split())[:128]
+        return "none"
+
+    @staticmethod
+    def _http_failure(status_code: int) -> tuple[ProviderFailureCode, bool]:
+        if status_code in {401, 403}:
+            return ProviderFailureCode.AUTHENTICATION, False
+        if status_code == 402:
+            return ProviderFailureCode.PAYMENT_REQUIRED, False
+        if status_code in {408, 504}:
+            return ProviderFailureCode.TIMEOUT, True
+        if status_code == 429:
+            return ProviderFailureCode.RATE_LIMITED, True
+        if 400 <= status_code < 500:
+            return ProviderFailureCode.INVALID_REQUEST, False
+        return ProviderFailureCode.UNAVAILABLE, True
+
+    def _log_request(
+        self,
+        *,
+        category: str,
+        status_code: int | None,
+        request_id: str,
+        started: float,
+        block_count: int,
+        payload_bytes: int,
+        level: int,
+    ) -> None:
+        LOGGER.log(
+            level,
+            (
+                "analysis_provider_request provider=%s model=%s category=%s status=%s "
+                "request_id=%s duration_ms=%.1f blocks=%d payload_bytes=%d"
+            ),
+            self.name,
+            self.model,
+            category,
+            status_code if status_code is not None else "none",
+            request_id,
+            (perf_counter() - started) * 1000,
+            block_count,
+            payload_bytes,
+        )
+
     async def analyze(
         self,
         request: AnalysisRequest,
         validation_feedback: Sequence[str],
     ) -> ProviderAnalysis:
         payload = self._request_payload(request, validation_feedback)
+        payload_bytes = len(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+        block_count = len(request.blocks)
+        started = perf_counter()
+        response: httpx2.Response | None = None
         try:
             async with httpx2.AsyncClient(
                 timeout=self._config.timeout_seconds,
@@ -222,8 +282,61 @@ class OpenAICompatibleAnalysisProvider:
             usage = body.get("usage", {})
             input_tokens = int(usage.get("prompt_tokens", 0))
             output_tokens = int(usage.get("completion_tokens", 0))
-        except (httpx2.HTTPError, KeyError, IndexError, TypeError, ValueError) as error:
-            raise RuntimeError("hosted analysis provider returned an invalid response") from error
+        except httpx2.TimeoutException as error:
+            self._log_request(
+                category=ProviderFailureCode.TIMEOUT.value,
+                status_code=None,
+                request_id=self._request_id(response),
+                started=started,
+                block_count=block_count,
+                payload_bytes=payload_bytes,
+                level=logging.WARNING,
+            )
+            raise ProviderError(ProviderFailureCode.TIMEOUT, retryable=True) from error
+        except httpx2.HTTPStatusError as error:
+            code, retryable = self._http_failure(error.response.status_code)
+            self._log_request(
+                category=code.value,
+                status_code=error.response.status_code,
+                request_id=self._request_id(error.response),
+                started=started,
+                block_count=block_count,
+                payload_bytes=payload_bytes,
+                level=logging.WARNING,
+            )
+            raise ProviderError(code, retryable=retryable) from error
+        except httpx2.RequestError as error:
+            self._log_request(
+                category=ProviderFailureCode.NETWORK.value,
+                status_code=None,
+                request_id=self._request_id(response),
+                started=started,
+                block_count=block_count,
+                payload_bytes=payload_bytes,
+                level=logging.WARNING,
+            )
+            raise ProviderError(ProviderFailureCode.NETWORK, retryable=True) from error
+        except (KeyError, IndexError, TypeError, ValueError) as error:
+            self._log_request(
+                category=ProviderFailureCode.INVALID_RESPONSE.value,
+                status_code=response.status_code if response is not None else None,
+                request_id=self._request_id(response),
+                started=started,
+                block_count=block_count,
+                payload_bytes=payload_bytes,
+                level=logging.WARNING,
+            )
+            raise ProviderError(ProviderFailureCode.INVALID_RESPONSE, retryable=True) from error
+
+        self._log_request(
+            category="success",
+            status_code=response.status_code,
+            request_id=self._request_id(response),
+            started=started,
+            block_count=block_count,
+            payload_bytes=payload_bytes,
+            level=logging.INFO,
+        )
 
         cost = (
             input_tokens * self._config.input_usd_per_million
@@ -433,4 +546,4 @@ def analysis_provider_from_environment(
 def analysis_timeout_seconds_from_environment(
     environment: Mapping[str, str] = os.environ,
 ) -> float:
-    return float(_positive_number(environment, "MODEL_TIMEOUT_SECONDS", "30", float))
+    return float(_positive_number(environment, "MODEL_TIMEOUT_SECONDS", "90", float))
