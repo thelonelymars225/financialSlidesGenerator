@@ -7,8 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from financial_slides_api.generation import router as generation_router
 from financial_slides_api.jobs import router as jobs_router
-from financial_slides_api.operations import health
+from financial_slides_api.operations import health, live, ready
 from financial_slides_api.privacy import router as privacy_router
+from financial_slides_api.request_correlation import RequestCorrelationMiddleware
 
 LOCAL_WEB_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
 
@@ -47,11 +48,19 @@ def create_app(environment: Mapping[str, str] = os.environ) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
     )
+    application.add_middleware(RequestCorrelationMiddleware)
+
     def health_check():
         return health(environment)
 
+    def readiness_check():
+        return ready(environment)
+
     application.get("/health", tags=["operations"])(health_check)
+    application.get("/health/live", tags=["operations"])(live)
+    application.get("/health/ready", tags=["operations"])(readiness_check)
     application.include_router(jobs_router, prefix="/api")
     application.include_router(generation_router, prefix="/api")
     application.include_router(privacy_router, prefix="/api")

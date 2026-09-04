@@ -51,7 +51,11 @@ cp .env.example .env
 pnpm dev          # start React on :3000 and FastAPI on :8000
 pnpm build        # create the production frontend build
 pnpm check        # type-check React and lint Python
-pnpm test         # run frontend and API tests
+pnpm test         # run web, API, and worker tests
+pnpm test:web     # run frontend tests
+pnpm test:api     # run FastAPI tests
+pnpm test:worker  # run extraction worker tests
+pnpm verify       # run checks, all tests, and the production build
 ```
 
 Individual workspaces can also be run directly:
@@ -193,9 +197,9 @@ lockfile together:
 
 ## Current status
 
-This is the initial monorepo foundation. It includes a working API health route,
-shared schema examples, package boundaries, and validation commands. The first
-implementation milestone is the analysis proof described in the BRD; product
+The monorepo now includes durable extraction jobs, local OCR fallback, hosted or
+deterministic analysis, source-grounded slide generation, editable PowerPoint
+export, operational health checks, and production deployment workflows. Product
 choices that still require evidence are recorded in [docs/decisions.md](docs/decisions.md).
 
 ## Git workflow

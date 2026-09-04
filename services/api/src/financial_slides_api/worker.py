@@ -101,6 +101,10 @@ class ExtractionJobWorker:
                 error.code in RETRYABLE_FAILURES,
             )
         except Exception:
+            LOGGER.exception(
+                "Extraction worker failed unexpectedly.",
+                extra={"job_id": job.id},
+            )
             self._record_failure(
                 job,
                 JobFailure(
@@ -142,7 +146,7 @@ def run_watch_loop(
         try:
             processed = worker.run_available(requested_limit)
         except Exception:
-            LOGGER.error(
+            LOGGER.exception(
                 "Worker batch failed; retrying after %.1f seconds.",
                 error_backoff_seconds,
             )

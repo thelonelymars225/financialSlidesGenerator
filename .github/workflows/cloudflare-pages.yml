@@ -17,6 +17,7 @@ jobs:
   deploy:
     name: Build and deploy frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment:
       name: cloudflare-pages
       url: ${{ steps.cloudflare.outputs.deployment-url }}

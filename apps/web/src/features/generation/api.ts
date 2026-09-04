@@ -5,33 +5,21 @@ import {
   type PresentationDensity,
 } from "./density";
 import { apiUrl } from "../../api-url";
+import {
+  ARTIFACT_REQUEST_TIMEOUT_MS,
+  createHttpClient,
+} from "../../http";
 
-export class GenerationApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
-    this.name = "GenerationApiError";
-  }
-}
+export { ApiError as GenerationApiError } from "../../http";
 
 type Fetcher = typeof fetch;
-
-async function parseResponse<T>(response: Response): Promise<T> {
-  if (response.ok) return response.json() as Promise<T>;
-  const problem = await response.json().catch(() => null) as { detail?: string } | null;
-  throw new GenerationApiError(
-    problem?.detail || "Slide generation could not be completed.",
-    response.status,
-  );
-}
 
 function ownerHeaders(ownerId: string): HeadersInit {
   return { "X-Owner-ID": ownerId };
 }
 
 export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-development") {
+  const request = createHttpClient(fetcher, "GenerationApiError");
   return {
     async start(
       extractionJobId: string,
@@ -39,7 +27,7 @@ export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-d
       requestKey: string,
       density: PresentationDensity = DEFAULT_PRESENTATION_DENSITY,
     ): Promise<GenerationJob> {
-      const response = await fetcher(apiUrl(`/api/jobs/${encodeURIComponent(extractionJobId)}/slides`), {
+      return request<GenerationJob>(apiUrl(`/api/jobs/${encodeURIComponent(extractionJobId)}/slides`), {
         method: "POST",
         headers: { "content-type": "application/json", ...ownerHeaders(ownerId) },
         body: JSON.stringify({
@@ -47,38 +35,39 @@ export function createGenerationApi(fetcher: Fetcher = fetch, ownerId = "local-d
           density,
           request_key: requestKey,
         }),
+        fallbackMessage: "Slide generation could not be completed.",
       });
-      return parseResponse<GenerationJob>(response);
     },
 
     async getJob(jobId: string): Promise<GenerationJob> {
-      const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}`), {
+      return request<GenerationJob>(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}`), {
         headers: ownerHeaders(ownerId),
+        fallbackMessage: "Slide generation could not be completed.",
       });
-      return parseResponse<GenerationJob>(response);
     },
 
     async getResult(jobId: string): Promise<GenerationResult> {
-      const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/result`), {
+      return request<GenerationResult>(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/result`), {
         headers: ownerHeaders(ownerId),
+        fallbackMessage: "Slide generation could not be completed.",
       });
-      return parseResponse<GenerationResult>(response);
     },
 
     async retry(jobId: string): Promise<GenerationJob> {
-      const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/retry`), {
+      return request<GenerationJob>(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/retry`), {
         method: "POST",
         headers: ownerHeaders(ownerId),
+        fallbackMessage: "Slide generation could not be completed.",
       });
-      return parseResponse<GenerationJob>(response);
     },
 
     async download(jobId: string): Promise<Blob> {
-      const response = await fetcher(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/artifact`), {
+      return request<Blob>(apiUrl(`/api/slide-jobs/${encodeURIComponent(jobId)}/artifact`), {
         headers: ownerHeaders(ownerId),
+        responseType: "blob",
+        timeoutMs: ARTIFACT_REQUEST_TIMEOUT_MS,
+        fallbackMessage: "The presentation download could not be completed.",
       });
-      if (!response.ok) await parseResponse(response);
-      return response.blob();
     },
   };
 }

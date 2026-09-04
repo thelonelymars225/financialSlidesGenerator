@@ -14,7 +14,12 @@
     "dev:web": "pnpm --filter @financial-slides/web dev",
     "build": "pnpm -r --if-present build",
     "check": "pnpm -r --if-present check && uv run --all-packages ruff check services",
-    "test": "pnpm -r --if-present test && uv run --all-packages pytest services/api/tests services/worker/tests"
+    "test": "pnpm test:web && pnpm test:packages && pnpm test:api && pnpm test:worker",
+    "test:web": "pnpm --filter @financial-slides/web test",
+    "test:packages": "pnpm --filter './packages/**' --if-present test",
+    "test:api": "uv run --package financial-slides-api pytest services/api/tests",
+    "test:worker": "uv run --package financial-slides-worker pytest services/worker/tests",
+    "verify": "pnpm check && pnpm test && pnpm build"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
