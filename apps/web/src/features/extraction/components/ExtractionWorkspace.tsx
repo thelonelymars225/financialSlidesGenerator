@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import { SlideGenerationPanel } from "../../generation/components/SlideGenerationPanel";
 import { PresentationDensitySelector } from "../../generation/components/PresentationDensitySelector";
 import {
@@ -6,7 +6,7 @@ import {
   type PresentationDensity,
 } from "../../generation/density";
 import { ExtractionApiError } from "../api";
-import { fileRequest } from "../file";
+import { fileRequest, PdfValidationError, validatePdfFile } from "../file";
 import { useExtractionJob } from "../hooks/useExtractionJob";
 import type { CreateJobRequest, DeckPurpose, InputMode } from "../types";
 import { ExtractionResultPreview } from "./ExtractionResultPreview";
@@ -28,14 +28,43 @@ export function ExtractionWorkspace() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [requestKey, setRequestKey] = useState(newRequestKey);
   const [lastRequest, setLastRequest] = useState<CreateJobRequest | null>(null);
+  const [fileValidationMessage, setFileValidationMessage] = useState<string | null>(null);
+  const fileValidationSequence = useRef(0);
   const extraction = useExtractionJob(jobId);
 
   const errorMessage = useMemo(() => {
+    if (inputMode === "file" && fileValidationMessage) return fileValidationMessage;
     const error = extraction.create.error ?? extraction.job.error ?? extraction.result.error ?? extraction.cancel.error;
     if (!error) return null;
     if (error instanceof ExtractionApiError) return error.message;
     return error instanceof Error ? error.message : "The extraction request failed.";
-  }, [extraction.cancel.error, extraction.create.error, extraction.job.error, extraction.result.error]);
+  }, [
+    extraction.cancel.error,
+    extraction.create.error,
+    extraction.job.error,
+    extraction.result.error,
+    fileValidationMessage,
+    inputMode,
+  ]);
+
+  async function selectFile(selected: File | null) {
+    const sequence = ++fileValidationSequence.current;
+    setFile(selected);
+    setFileValidationMessage(null);
+    setRequestKey(newRequestKey());
+    if (!selected) return;
+    try {
+      await validatePdfFile(selected);
+    } catch (error) {
+      if (sequence === fileValidationSequence.current) {
+        setFileValidationMessage(
+          error instanceof PdfValidationError
+            ? error.message
+            : "The selected file could not be validated.",
+        );
+      }
+    }
+  }
 
   async function buildRequest(): Promise<CreateJobRequest> {
     if (inputMode === "file") {
@@ -59,7 +88,8 @@ export function ExtractionWorkspace() {
       setLastRequest(request);
       const job = await extraction.create.mutateAsync(request);
       setJobId(job.id);
-    } catch {
+    } catch (error) {
+      if (error instanceof PdfValidationError) setFileValidationMessage(error.message);
       // React Query exposes a safe error state below the form.
     }
   }
@@ -103,14 +133,13 @@ export function ExtractionWorkspace() {
         {inputMode === "file" ? (
           <label className="grid min-h-48 cursor-pointer place-content-center rounded-2xl border border-dashed border-emerald-800/40 bg-emerald-50/50 p-7 text-center transition hover:border-emerald-700 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-emerald-700 dark:border-emerald-200/25 dark:bg-emerald-950/20">
             <strong className="mb-2 text-lg">{file?.name ?? "Choose a born-digital PDF"}</strong>
-            <span className="mb-4 block text-sm text-stone-500 dark:text-stone-400">PDF files up to the backend safety limit are supported.</span>
+            <span className="mb-4 block text-sm text-stone-500 dark:text-stone-400">PDF files up to 25 MiB are supported.</span>
             <input
               className="mx-auto max-w-72 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-emerald-950 file:px-4 file:py-2 file:font-semibold file:text-white dark:file:bg-emerald-200 dark:file:text-emerald-950"
               type="file"
               accept="application/pdf,.pdf"
               onChange={(event) => {
-                setFile(event.target.files?.[0] ?? null);
-                setRequestKey(newRequestKey());
+                void selectFile(event.target.files?.[0] ?? null);
               }}
             />
           </label>
@@ -152,7 +181,7 @@ export function ExtractionWorkspace() {
           value={presentationDensity}
         />
 
-        <button className="mt-6 w-full rounded-xl bg-orange-700 px-5 py-3.5 font-bold text-white transition hover:bg-orange-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-orange-600 dark:hover:bg-orange-500" disabled={extraction.create.isPending || (inputMode === "file" ? !file : !sourceText.trim())}>
+        <button className="mt-6 w-full rounded-xl bg-orange-700 px-5 py-3.5 font-bold text-white transition hover:bg-orange-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-orange-600 dark:hover:bg-orange-500" disabled={extraction.create.isPending || (inputMode === "file" ? !file || Boolean(fileValidationMessage) : !sourceText.trim())}>
           {extraction.create.isPending ? "Submitting…" : "Extract source"}
         </button>
       </form>

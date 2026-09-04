@@ -22,6 +22,7 @@ jobs:
   validate:
     name: Validate monorepo
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -49,6 +50,14 @@ jobs:
 
       - name: Install Python dependencies
         run: uv sync --all-packages --all-extras --frozen
+
+      - name: Audit JavaScript dependencies
+        run: pnpm audit --audit-level high
+
+      - name: Audit Python dependencies
+        run: |
+          uv export --all-packages --no-dev --no-emit-workspace --frozen --output-file /tmp/requirements.txt
+          uv tool run pip-audit --requirement /tmp/requirements.txt --no-deps --disable-pip
 
       - name: Check source
         run: pnpm check
